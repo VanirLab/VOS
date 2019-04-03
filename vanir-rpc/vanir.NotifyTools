@@ -1,0 +1,4 @@
+#!/bin/sh
+
+exec /usr/bin/vanirsd-query -c /var/run/vanirsd.misc.sock -e --fail \
+         "$QREXEC_REMOTE_DOMAIN" vanir.NotifyTools dom0 "" >/dev/null 2>&1

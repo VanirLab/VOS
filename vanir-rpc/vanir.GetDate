@@ -1,0 +1,21 @@
+import qubesadmin
+import datetime
+import subprocess
+
+def main():
+    app = qubesadmin.Vanir()
+
+    clockvm = app.clockvm
+    if clockvm is None:
+        return
+
+    if not clockvm.is_running():
+        # print dom0 time if clockvm is not running
+        print(datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%S+00:00'))
+    else:
+        # passthrough request to the clockvm
+        p = clockvm.run_service('vanir.GetDate', stdout=None, stdin=subprocess.DEVNULL)
+        p.wait()
+
+if __name__ == '__main__':
+    main()
