@@ -39,9 +39,9 @@ def main(args=None):
         vanir.log.enable_debug()
 
     servers = loop.run_until_complete(vanir.api.create_servers(
-        vanir.api.admin.QubesAdminAPI,
-        vanir.api.internal.QubesInternalAPI,
-        vanir.api.misc.QubesMiscAPI,
+        vanir.api.admin.VanirAdminAPI,
+        vanir.api.internal.VanirInternalAPI,
+        vanir.api.misc.VanirMiscAPI,
         app=args.app, debug=args.debug))
 
     socknames = []
