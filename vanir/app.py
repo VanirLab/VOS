@@ -301,10 +301,10 @@ class VanirHost:
             if only_vm:
                 xid = only_vm.xid
                 if xid < 0:
-                    raise vanir.exc.QubesVMNotRunningError(only_vm)
+                    raise vanir.exc.VanirVMNotRunningError(only_vm)
                 info = self.app.vmm.xc.domain_getinfo(xid, 1)
                 if info[0]['domid'] != xid:
-                    raise vanir.exc.QubesVMNotRunningError(only_vm)
+                    raise vanir.exc.VanirVMNotRunningError(only_vm)
             else:
                 info = self.app.vmm.xc.domain_getinfo(0, 1024)
         except AttributeError:
