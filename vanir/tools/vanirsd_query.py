@@ -30,11 +30,11 @@ parser.add_argument('--fail',
     help='Should non-OK vanirsd response result in non-zero exit code')
 
 parser.add_argument('src', metavar='SRC',
-    help='source qube')
+    help='source vanir')
 parser.add_argument('method', metavar='METHOD',
     help='method name')
 parser.add_argument('dest', metavar='DEST',
-    help='destination qube')
+    help='destination vanir')
 parser.add_argument('arg', metavar='ARGUMENT',
     nargs='?', default='',
     help='argument to method')
