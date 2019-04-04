@@ -128,6 +128,7 @@ LOGDIR ?= c:/vanir/log
 FILESDIR ?= c:/program files/cybetrigo/vanir
 
 ifeq ($(OS),Windows_NT)
+    detected_OS := Windows
     CCFLAGS += -D WIN32
     ifeq ($(PROCESSOR_ARCHITEW6432),AMD64)
         CCFLAGS += -D AMD64
