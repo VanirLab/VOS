@@ -5,7 +5,7 @@ cache: pip
 python:
   - '3.6'
 install:
-  - pip install --quiet -r ci/requirements.txt
+  - pip install -r requirements.txt && pip install coveralls pylint
   - git clone https://github.com/"${TRAVIS_REPO_SLUG%%/*}"/vanir-builder ~/vanir-builder
 script:
   - PYTHONPATH=test-packages pylint --rcfile=ci/pylintrc vanir vanirpolicy
