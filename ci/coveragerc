@@ -1,0 +1,3 @@
+[run]
+source = vanir, vanirpolicy
+omit = vanir/tests/*, vanirpolicy/tests/*
