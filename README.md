@@ -18,3 +18,9 @@ an automate vulnerability and penetration testing.
 -------------------------------------
 ## Branch
 This is master branch of the VOS core.
+
+--------------------------------------
+## Vulnerability Reports
+
+N/A
+
