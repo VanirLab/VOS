@@ -10,6 +10,11 @@ without having to set up external pen-testing operating system and with very hig
 capability and processing power. It allows
 you to scan, enumerate the security loopholes, and vulnerability with full customization of the open-source tools. 
 
+-------------------------------------
+## Future Scope
+Automation: For future development & research, this os can be used as
+an automate vulnerability and penetration testing.
 
 -------------------------------------
+## Branch
 This is master branch of the VOS core.
