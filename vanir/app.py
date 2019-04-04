@@ -1127,7 +1127,7 @@ class vanir(vanir.PropertyHolder):
                 kwargs['template'] = self.default_template
             if kwargs['template'] is None:
                 raise vanir.exc.VanirValueError(
-                    'Template for the qube not specified, nor default '
+                    'Template for the Vanir not specified, nor default '
                     'template set.')
         elif 'template' in kwargs and isinstance(kwargs['template'], str):
             kwargs['template'] = self.domains[kwargs['template']]
