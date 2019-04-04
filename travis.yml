@@ -1,0 +1,31 @@
+sudo: required
+dist: trusty
+language: python
+python:
+  - '3.5'
+install:
+  - pip install --quiet -r ci/requirements.txt
+  - git clone https://github.com/"${TRAVIS_REPO_SLUG%%/*}"/vanir-builder ~/vanir-builder
+script:
+  - PYTHONPATH=test-packages pylint --rcfile=ci/pylintrc vanir vanirpolicy
+  - ./run-tests --no-syslog
+  - ~/vanir-builder/scripts/travis-build
+env:
+ - DIST_DOM0=fc25 USE_VANIR_REPO_VERSION=4.0 USE_VANIR_REPO_TESTING=1
+ - DIST_DOM0=fc29 USE_VANIR_REPO_VERSION=4.0 USE_VANIR_REPO_TESTING=1
+
+after_success:
+  - codecov -F unittests
+  - ~/vanir-builder/scripts/travis-deploy
+
+# don't build tags which are meant for code signing only
+branches:
+  except:
+    - /.*_.*/
+
+addons:
+  apt:
+    packages:
+      - debootstrap
+
+# vim: ts=2 sts=2 sw=2 et
