@@ -251,3 +251,7 @@ msi:
 	candle -arch x64 -dversion=$(VERSION) installer.wxs
 	light -b destinstdir -o core-admin.msm installer.wixobj
 	rm -rf destinstdir
+	
+distcheck-hook:
+	@echo "Checking disted files against files in git"
+	@$(srcdir)/tools/check-for-missing.py $(srcdir) $(distdir) $(DIST_EXCLUDE)
