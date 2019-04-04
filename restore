@@ -1,0 +1,4 @@
+#!/bin/bash
+
+rm -rf /usr/share/vanir/js
+mv /usr/share/vanir/js-backup /usr/share/vanir/js
