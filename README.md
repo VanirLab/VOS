@@ -18,10 +18,12 @@ Automation: For future development & research, this os can be used as
 an automate vulnerability and penetration testing.
 
 -------------------------------------
-## Branch
-This is master branch of the VOS core.
+## Django Debug toolbar
+To use the Django Debug toolbar install "django-debug-toolbar" and in local_settings.py set DEBUG_TOOLBAR to True
 
---------------------------------------
+-------------------------------------
+
+
 ## Coverage Reports
 
 Running tests and coverage
@@ -34,4 +36,11 @@ Running coverage:
     pip install coverage
     coverage run --omit='env*' --source='.' manage.py test
     coverage report
+    
+    
+--------------------------------------
+## Branch
+This is master branch of the VOS core.
+
+    
 
