@@ -11,7 +11,7 @@ import vanir.api.internal
 import vanir.api.misc
 import vanir.log
 import vanir.utils
-import vanir.vm.qubesvm
+import vanir.vm.vanirvm
 
 def sighandler(loop, signame, servers):
     print('caught {}, exiting'.format(signame))
