@@ -18,8 +18,8 @@ Automation: For future development & research, this os can be used as
 an automate vulnerability and penetration testing.
 
 -------------------------------------
-## Django Debug toolbar
-To use the Django Debug toolbar install "django-debug-toolbar" and in local_settings.py set DEBUG_TOOLBAR to True
+## Toolbar debug  
+To use the Django debug tool, install "django-debug-toolbar" and in local_settings.py set DEBUG_TOOLBAR to True
 
 -------------------------------------
 
