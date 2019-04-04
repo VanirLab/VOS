@@ -1,6 +1,14 @@
 #Vanir Validator
 import sys
-from urllib3 import HTTPResponse
+
+
+import urllib
+import asyncio
+import os
+ 
+from django.http import HttpResponse
+from django.contrib import admin
+from django.urls import include, path
 
 def invokenmap(request):
         if 'username' in request.COOKIES:
