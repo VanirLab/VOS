@@ -22,7 +22,7 @@ class VanirAction(argparse.Action):
         `namespace.app` is instantiated.
     '''
     # pylint: disable=too-few-public-methods
-    def parse_qubes_app(self, parser, namespace):
+    def parse_vanir_app(self, parser, namespace):
         ''' This method is called by :py:class:`vanir.tools.VanirArgumentParser`
             after the `namespace.app` is instantiated. Oerwrite this method when
             extending :py:class:`vanir.tools.VanirAction` to initialized values
@@ -154,7 +154,7 @@ class VmNameAction(VanirAction):
         ''' Set ``namespace.vmname`` to ``values`` '''
         setattr(namespace, self.dest, values)
 
-    def parse_qubes_app(self, parser, namespace):
+    def parse_vanir_app(self, parser, namespace):
         assert hasattr(namespace, 'app')
         setattr(namespace, 'domains', [])
         app = namespace.app
@@ -200,8 +200,8 @@ class RunningVmNameAction(VmNameAction):
         super(RunningVmNameAction, self).__init__(
             option_strings, dest=dest, help=help, nargs=nargs, **kwargs)
 
-    def parse_qubes_app(self, parser, namespace):
-        super(RunningVmNameAction, self).parse_qubes_app(parser, namespace)
+    def parse_vanir_app(self, parser, namespace):
+        super(RunningVmNameAction, self).parse_vanir_app(parser, namespace)
         for vm in namespace.domains:
             if not vm.is_running():
                 parser.error_runtime("domain {!r} is not running".format(
@@ -224,7 +224,7 @@ class VolumeAction(VanirAction):
         ''' Set ``namespace.vmname`` to ``values`` '''
         setattr(namespace, self.dest, values)
 
-    def parse_qubes_app(self, parser, namespace):
+    def parse_vanir_app(self, parser, namespace):
         ''' Acquire the :py:class:``vanir.storage.Volume`` object from
             ``namespace.app``.
         '''
@@ -262,14 +262,14 @@ class PoolsAction(VanirAction):
         names += [values]
         setattr(namespace, self.dest, names)
 
-    def parse_qubes_app(self, parser, namespace):
+    def parse_vanir_app(self, parser, namespace):
         app = namespace.app
         pool_names = getattr(namespace, self.dest)
         if pool_names:
             try:
                 pools = [app.get_pool(name) for name in pool_names]
                 setattr(namespace, self.dest, pools)
-            except vanir.exc.QubesException as e:
+            except vanir.exc.VanirException as e:
                 parser.error(str(e))
                 sys.exit(2)
 
@@ -289,7 +289,7 @@ class VanirArgumentParser(argparse.ArgumentParser):
     *kwargs* are passed to :py:class:`argparser.ArgumentParser`.
     Currenty supported options:
         ``--force-root`` (optional)
-        ``--qubesxml`` location of :file:`vanir.xml` (help is suppressed)
+        ``--vanirsxml`` location of :file:`vanir.xml` (help is suppressed)
         ``--offline-mode`` do not talk to hypervisor (help is suppressed)
         ``--verbose`` and ``--quiet``
     '''
@@ -333,7 +333,7 @@ class VanirArgumentParser(argparse.ArgumentParser):
         namespace = super(VanirArgumentParser, self).parse_args(args, namespace)
 
         if self._want_app and not self._want_app_no_instance:
-            self.set_qubes_verbosity(namespace)
+            self.set_vanir_verbosity(namespace)
             namespace.app = vanir.vanir(namespace.app,
                 offline_mode=namespace.offline_mode)
 
@@ -343,7 +343,7 @@ class VanirArgumentParser(argparse.ArgumentParser):
         for action in self._actions:
             # pylint: disable=protected-access
             if issubclass(action.__class__, VanirAction):
-                action.parse_qubes_app(self, namespace)
+                action.parse_vanir_app(self, namespace)
             elif issubclass(action.__class__,
                     argparse._SubParsersAction):  # pylint: disable=no-member
                 assert hasattr(namespace, 'command')
@@ -351,7 +351,7 @@ class VanirArgumentParser(argparse.ArgumentParser):
                 subparser = action._name_parser_map[command]
                 for subaction in subparser._actions:
                     if issubclass(subaction.__class__, VanirAction):
-                        subaction.parse_qubes_app(self, namespace)
+                        subaction.parse_vanir_app(self, namespace)
 
         return namespace
 
@@ -384,7 +384,7 @@ class VanirArgumentParser(argparse.ArgumentParser):
 
 
     @staticmethod
-    def set_qubes_verbosity(namespace):
+    def set_vanir_verbosity(namespace):
         '''Apply a verbosity setting.
         This is done by configuring global logging.
         :param argparse.Namespace args: args as parsed by parser
