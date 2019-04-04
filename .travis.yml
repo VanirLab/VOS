@@ -15,11 +15,7 @@ script:
   - coverage run --rcfile .coveragerc manage.py test
   - pylint devel main mirrors news packages releng templates todolists visualize *.py
   
-env:
- - DIST_DOM0=fc25 USE_VANIR_REPO_VERSION=1.0 USE_VANIR_REPO_TESTING=1
- - DIST_DOM0=fc29 USE_VANIR_REPO_VERSION=1.0 USE_VANIR_REPO_TESTING=1
- - DIST_DOM0=fc32 USE_VANIR_REPO_VERSION=1.0 USE_VANIR_REPO_TESTING=1
- - DIST_DOM0=fc36 USE_VANIR_REPO_VERSION=1.0 USE_VANIR_REPO_TESTING=1
+
 
 after_success:
   - codecov -F unittests
