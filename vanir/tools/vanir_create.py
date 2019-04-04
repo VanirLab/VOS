@@ -2,7 +2,7 @@ import sys
 import vanir
 import vanir.tools
 
-parser = vanir.tools.QubesArgumentParser(
+parser = vanir.tools.VanirArgumentParser(
     description='Create new Vanir OS store.',
     want_app=True,
     want_app_no_instance=True)
