@@ -8,8 +8,8 @@ jinja2
 lxml
 pylint
 sphinx
-psycopg
-psycopg2==2.7.4
+psycopg2-binary
+psycopg2==2.8
 pyinotify==0.9.6
 python-memcached==1.59
 pydbus
