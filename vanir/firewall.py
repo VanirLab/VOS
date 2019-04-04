@@ -480,13 +480,13 @@ class Firewall:
             elif version == '2':
                 self.load_v2(root)
             else:
-                raise vanir.exc.QubesVMError(self.vm,
+                raise vanir.exc.VanirVMError(self.vm,
                     'Unsupported firewall.xml version: {}'.format(version))
         else:
             self.load_defaults()
 
     def load_v1(self, xml_root):
-        '''Load old (vanir < 4.0) firewall XML format'''
+        '''Load old (vanir < 1.0) firewall XML format'''
         policy_v1 = xml_root.get('policy')
         assert policy_v1 in ('allow', 'deny')
         default_policy_is_accept = (policy_v1 == 'allow')
@@ -526,7 +526,7 @@ class Firewall:
         '''Function called to reload expired rules'''
         self.load()
         # this will both save rules skipping those expired and trigger
-        # QubesDB update; and possibly schedule another timer
+        # VanirDB update; and possibly schedule another timer
         self.save()
 
     def save(self):
@@ -561,7 +561,7 @@ class Firewall:
             os.umask(old_umask)
         except EnvironmentError as err:
             self.vm.log.error("save error: {}".format(err))
-            raise vanir.exc.QubesException('save error: {}'.format(err))
+            raise vanir.exc.VanirException('save error: {}'.format(err))
 
         self.vm.fire_event('firewall-changed')
 
@@ -574,7 +574,7 @@ class Firewall:
             loop.call_later(expire_when.total_seconds(), self._expire_rules)
 
     def qdb_entries(self, addr_family=None):
-        '''Return firewall settings serialized for QubesDB entries
+        '''Return firewall settings serialized for VanirDB entries
         :param addr_family: include rules only for IPv4 (4) or IPv6 (6); if
         None, include both
         '''
