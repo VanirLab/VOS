@@ -3,7 +3,7 @@ import vanir
 import sqlite3
 import vanir.tools
 
-parser = vanir.tools.QubesArgumentParser(
+parser = vanir.tools.VanirArgumentParser(
     description='Create new Vanir OS sql.',
     want_app=True,
     want_app_no_instance=True)
