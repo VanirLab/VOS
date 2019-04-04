@@ -1,0 +1,13 @@
+# WARNING: those requirements are used only for travis-ci.org
+# they SHOULD NOT be used under normal conditions; use system package manager
+coverage
+codecov
+django
+docutils
+jinja2
+lxml
+pylint
+sphinx
+Psycopg
+pydbus
+PyYAML
