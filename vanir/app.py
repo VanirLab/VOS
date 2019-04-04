@@ -42,7 +42,7 @@ import vanir.storage
 import vanir.storage.reflink
 import vanir.vm
 import vanir.vm.adminvm
-import vanir.vm.qubesvm
+import vanir.vm.vanirvm
 import vanir.vm.templatevm
 # pylint: enable=wrong-import-position
 
