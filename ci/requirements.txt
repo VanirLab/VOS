@@ -9,6 +9,7 @@ lxml
 pylint
 sphinx
 Psycopg
+psycopg2-binary
 pydbus
 PyYAML
 IPy==0.83
