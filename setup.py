@@ -90,4 +90,7 @@ if __name__ == '__main__':
                 'linux-kernel = vanir.storage.kernels:LinuxKernel',
                 'lvm_thin = vanir.storage.lvm:ThinPool',
             ],
+	   'vanir.mechanize':[
+	   '    vanir.setup = vanir.setup:Settings'
+	   ],
         })
