@@ -1,0 +1,2005 @@
+from __future__ import absolute_import
+
+import asyncio
+import base64
+import grp
+import os
+import os.path
+import shutil
+import string
+import subprocess
+import uuid
+import warnings
+
+import libvirt  # pylint: disable=import-error
+import lxml
+
+import vanir
+import vanir.config
+import vanir.exc
+import vanir.storage
+import vanir.storage.file
+import vanir.utils
+import vanir.vm
+import vanir.vm.mix.net
+
+qmemman_present = False
+try:
+    import vanir.qmemman.client  # pylint: disable=wrong-import-position
+    qmemman_present = True
+except ImportError:
+    pass
+
+
+# add an extra MB because Nova rounds up to MBs
+MEM_OVERHEAD_BASE = (3 + 1) * 1024 * 1024
+MEM_OVERHEAD_PER_VCPU = 3 * 1024 * 1024 / 2
+
+
+def _setter_kernel(self, prop, value):
+    ''' Helper for setting the domain kernel and running sanity checks on it.
+    '''  # pylint: disable=unused-argument
+    if not value:
+        return ''
+    value = str(value)
+    if '/' in value:
+        raise vanir.exc.VanirPropertyValueError(self, prop, value,
+            'Kernel name cannot contain \'/\'')
+    return value
+
+
+def _setter_positive_int(self, prop, value):
+    ''' Helper for setting a positive int. Checks that the int is > 0 '''
+    # pylint: disable=unused-argument
+    value = int(value)
+    if value <= 0:
+        raise ValueError('Value must be positive')
+    return value
+
+def _setter_non_negative_int(self, prop, value):
+    ''' Helper for setting a positive int. Checks that the int is >= 0 '''
+    # pylint: disable=unused-argument
+    value = int(value)
+    if value < 0:
+        raise ValueError('Value must be positive or zero')
+    return value
+
+
+def _setter_default_user(self, prop, value):
+    ''' Helper for setting default user '''
+    value = str(value)
+    # specifically forbid: ':', ' ', ''', '"'
+    allowed_chars = string.ascii_letters + string.digits + '_-+,.'
+    if not all(c in allowed_chars for c in value):
+        raise vanir.exc.VanirPropertyValueError(self, prop, value,
+            'Username can contain only those characters: ' + allowed_chars)
+    return value
+
+def _setter_virt_mode(self, prop, value):
+    value = str(value)
+    value = value.lower()
+    if value not in ('hvm', 'pv', 'pvh'):
+        raise vanir.exc.VanirPropertyValueError(self, prop, value,
+            'Invalid virtualization mode, supported values: hvm, pv, pvh')
+    if value == 'pvh' and list(self.devices['pci'].persistent()):
+        raise vanir.exc.VanirPropertyValueError(self, prop, value,
+            "pvh mode can't be set if pci devices are attached")
+    return value
+
+def _default_virt_mode(self):
+    if self.devices['pci'].persistent():
+        return 'hvm'
+    try:
+        return self.template.virt_mode
+    except AttributeError:
+        return 'pvh'
+
+def _default_with_template(prop, default):
+    '''Return a callable for 'default' argument of a property. Use a value
+    from a template (if any), otherwise *default*
+    '''
+
+    def _func(self):
+        try:
+            return getattr(self.template, prop)
+        except AttributeError:
+            if callable(default):
+                return default(self)
+            return default
+
+    return _func
+
+
+def _default_maxmem(self):
+    # first check for any reason to _not_ enable qmemman
+    if not self.is_memory_balancing_possible():
+        return 0
+
+    # Linux specific cap: max memory can't scale beyond 10.79*init_mem
+    # see https://groups.google.com/forum/#!topic/vanir-devel/VRqkFj1IOtA
+    if self.features.get('os', None) == 'Linux':
+        default_maxmem = self.memory * 10
+    else:
+        default_maxmem = 4000
+
+    # don't use default larger than half of physical ram
+    default_maxmem = min(default_maxmem,
+        int(self.app.host.memory_total / 1024 / 2))
+
+    return _default_with_template('maxmem', default_maxmem)(self)
+
+def _default_kernelopts(self):
+    '''
+    Return default kernel options for the given kernel. If kernel directory
+    contains 'default-kernelopts-{pci,nopci}.txt' file, use that. Otherwise
+    use built-in defaults.
+    For vanir without PCI devices, kernelopts of vanir's template are
+    considered (for template-based vanir).
+    '''
+    if not self.kernel:
+        return ''
+    if 'kernel' in self.volumes:
+        kernels_dir = self.storage.kernels_dir
+    else:
+        kernels_dir = os.path.join(
+            vanir.config.system_path['qubes_kernels_base_dir'],
+            self.kernel)
+    pci = bool(list(self.devices['pci'].persistent()))
+    if pci:
+        path = os.path.join(kernels_dir, 'default-kernelopts-pci.txt')
+    else:
+        try:
+            return self.template.kernelopts
+        except AttributeError:
+            pass
+        path = os.path.join(kernels_dir, 'default-kernelopts-nopci.txt')
+    if os.path.exists(path):
+        with open(path) as f_kernelopts:
+            return f_kernelopts.read().strip()
+    else:
+        return (vanir.config.defaults['kernelopts_pcidevs'] if pci else
+            vanir.config.defaults['kernelopts'])
+
+
+class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
+    '''Base functionality of Vanir VM shared between all VMs.
+    The following events are raised on this class or its subclasses:
+        .. event:: domain-init (subject, event)
+            Fired at the end of class' constructor.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-init'``)
+        .. event:: domain-load (subject, event)
+            Fired after the vanir was loaded from :file:`vanir.xml`
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-loaded'``)
+        .. event:: domain-pre-start \
+                (subject, event, start_guid, mem_required)
+            Fired at the beginning of :py:meth:`start` method.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-pre-start'``)
+            *other arguments are as in :py:meth:`start`*
+        .. event:: domain-spawn (subject, event, start_guid)
+            Fired after creating libvirt domain.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-spawn'``)
+            Handler for this event can be asynchronous (a coroutine).
+            *other arguments are as in :py:meth:`start`*
+        .. event:: domain-start (subject, event, start_guid)
+            Fired at the end of :py:meth:`start` method.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-start'``)
+            *other arguments are as in :py:meth:`start`*
+        .. event:: domain-start-failed (subject, event, reason)
+            Fired when :py:meth:`start` method fails.
+            *reason* argument is a textual error message.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-start'``)
+            *other arguments are as in :py:meth:`start`*
+        .. event:: domain-paused (subject, event)
+            Fired when the domain has been paused.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-paused'``)
+        .. event:: domain-unpaused (subject, event)
+            Fired when the domain has been unpaused.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-unpaused'``)
+        .. event:: domain-stopped (subject, event)
+            Fired when domain has been stopped.
+            This event is emitted before ``'domain-shutdown'`` and will trigger
+            the cleanup in VanirVM. So if you require that the cleanup has
+            already run use ``'domain-shutdown'``.
+            Note that you can receive this event as soon as you received
+            ``'domain-pre-start'``. This also can be emitted in case of a
+            startup failure, before or after ``'domain-start-failed'``.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-stopped'``)
+        .. event:: domain-shutdown (subject, event)
+            Fired when domain has been shut down. It is generated after
+            ``'domain-stopped'``.
+            Note that you can receive this event as soon as you received
+            ``'domain-pre-start'``. This also can be emitted in case of a
+            startup failure, before or after ``'domain-start-failed'``.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-shutdown'``)
+        .. event:: domain-pre-shutdown (subject, event, force)
+            Fired at the beginning of :py:meth:`shutdown` method.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-pre-shutdown'``)
+            :param force: If the shutdown is to be forceful
+        .. event:: domain-cmd-pre-run (subject, event, start_guid)
+            Fired at the beginning of :py:meth:`run_service` method.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-cmd-pre-run'``)
+            :param start_guid: If the gui daemon can be started
+        .. event:: domain-create-on-disk (subject, event)
+            Fired at the end of :py:meth:`create_on_disk` method.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-create-on-disk'``)
+        .. event:: domain-remove-from-disk (subject, event)
+            Fired at the beginning of :py:meth:`remove_from_disk` method, before
+            the vanir directory is removed.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-remove-from-disk'``)
+        .. event:: domain-clone-files (subject, event, src)
+            Fired at the end of :py:meth:`clone_disk_files` method.
+            Handler for this event can be asynchronous (a coroutine).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-clone-files'``)
+            :param src: source vanir
+        .. event:: domain-verify-files (subject, event)
+            Fired at the end of :py:meth:`clone_disk_files` method.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-verify-files'``)
+            If you think some files are missing or damaged, raise an exception.
+        .. event:: domain-is-fully-usable (subject, event)
+            Fired at the end of :py:meth:`clone_disk_files` method.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-is-fully-usable'``)
+            You may ``yield False`` from the handler if you think the vanir is
+            not fully usable. This will cause the domain to be in "transient"
+            state in the domain lifecycle.
+        .. event:: domain-qdb-create (subject, event)
+            Fired at the end of :py:meth:`create_qdb_entries` method.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-qdb-create'``)
+            This event is a good place to add your custom entries to the qdb.
+        .. event:: domain-qdb-change:watched-path (subject, event, path)
+            Fired when watched VanirDB entry is changed. See
+            :py:meth:`watch_qdb_path`. *watched-path* part of event name is
+            what path was registered for watching, *path* in event argument
+            is what actually have changed (which may be different if watching a
+            directory, i.e. a path with `/` at the end).
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-qdb-change'``)
+            :param path: changed VanirDB path
+        .. event:: backup-get-files (subject, event)
+            Collects additional file to be included in a backup.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'backup-get-files'``)
+            Handlers should yield paths of the files.
+        .. event:: domain-restore (subject, event)
+            Domain was just restored from backup, although the storage was not
+            yet verified and the app object was not yet saved.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-restore'``)
+        .. event:: domain-feature-set:feature (subject, event, feature, value
+            [, oldvalue])
+            A feature was changed. This event is fired before bare
+            `domain-feature-set` event.
+            *oldvalue* is present only when there was any.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-feature-set:' feature``)
+            :param feature: feature name
+            :param value: new value
+            :param oldvalue: old value, if any
+        .. event:: domain-feature-delete:feature (subject, event, feature)
+            A feature was removed. This event is fired before bare
+            `domain-feature-delete` event.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-feature-delete:' feature``)
+            :param feature: feature name
+        .. event:: domain-tag-add:tag (subject, event, tag)
+            A tag was added.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-tag-add:' tag``)
+            :param tag: tag name
+        .. event:: domain-tag-delete:tag (subject, event, tag)
+            A feature was removed.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'domain-tag-delete:' tag``)
+            :param tag: tag name
+        .. event:: features-request (subject, event, *, untrusted_features)
+            The domain is performing a features request.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'features-request'``)
+            :param untrusted_features: :py:class:`dict` containing the feature \
+            request
+            The content of the `untrusted_features` variable is, as the name
+            implies, **UNTRUSTED**. The remind this to programmer, the variable
+            name has to be exactly as provided.
+            It is up to the extensions to decide, what to do with request,
+            ranging from plainly ignoring the request to verbatim copy into
+            :py:attr:`features` with only minimal sanitisation.
+            Handler for this event can be asynchronous (a coroutine).
+        .. event:: firewall-changed (subject, event)
+            Firewall was changed.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'firewall-changed'``)
+        .. event:: net-domain-connect (subject, event, vm)
+            Fired after connecting a domiain to this vm.
+            :param subject: Event emitter (the vanir object)
+            :param event: Event name (``'net-domain-connect'``)
+            :param vm: The domain that was just connected.
+            On the `vm` object there was probably ``property-set:netvm`` fired
+            earlier.
+        .. event:: template-postinstall (subject, event)
+            Fired on non-template-based domain (TemplateVM, StandaloneVM) when
+            it first reports qrexec presence. This happens at the first
+            domain startup just after its installation and is suitable for
+            performing various post-installation setup.
+            Handler for this event can be asynchronous (a coroutine).
+    '''
+
+    #
+    # per-class properties
+    #
+
+    #: directory in which domains of this class will reside
+    dir_path_prefix = vanir.config.system_path['vanir_appvms_dir']
+
+    #
+    # properties loaded from XML
+    #
+
+    virt_mode = vanir.property('virt_mode',
+        type=str, setter=_setter_virt_mode,
+        default=_default_virt_mode,
+        doc='''Virtualisation mode: full virtualisation ("HVM"),
+            or paravirtualisation ("PV"), or hybrid ("PVH"). TemplateBasedVMs use its '
+            'template\'s value by default.''')
+
+    installed_by_rpm = vanir.property('installed_by_rpm',
+        type=bool, setter=vanir.property.bool,
+        default=False,
+        doc='''If this domain's image was installed from package tracked by
+            package manager.''')
+
+    memory = vanir.property('memory', type=int,
+        setter=_setter_positive_int,
+        default=_default_with_template('memory', lambda self:
+            vanir.config.defaults[
+                'hvm_memory' if self.virt_mode == 'hvm' else 'memory']),
+        doc='Memory currently available for this VM. TemplateBasedVMs use its '
+            'template\'s value by default.')
+
+    maxmem = vanir.property('maxmem', type=int,
+        setter=_setter_non_negative_int,
+        default=_default_maxmem,
+        doc='''Maximum amount of memory available for this VM (for the purpose
+            of the memory balancer). Set to 0 to disable memory balancing for
+            this vanir. TemplateBasedVMs use its template\'s value by default
+            (unless memory balancing not supported for this vanir).''')
+
+    stubdom_mem = vanir.property('stubdom_mem', type=int,
+        setter=_setter_positive_int,
+        default=None,
+        doc='Memory amount allocated for the stubdom')
+
+    vcpus = vanir.property('vcpus',
+        type=int,
+        setter=_setter_positive_int,
+        default=_default_with_template('vcpus', 2),
+        doc='Number of virtual CPUs for a vanir. TemplateBasedVMs use its '
+            'template\'s value by default.')
+
+    # CORE2: swallowed uses_default_kernel
+    kernel = vanir.property('kernel', type=str,
+        setter=_setter_kernel,
+        default=_default_with_template('kernel',
+            lambda self: self.app.default_kernel),
+        doc='Kernel used by this domain. TemplateBasedVMs use its '
+            'template\'s value by default.')
+
+    # CORE2: swallowed uses_default_kernelopts
+    # pylint: disable=no-member
+    kernelopts = vanir.property('kernelopts', type=str, load_stage=4,
+        default=_default_kernelopts,
+        doc='Kernel command line passed to domain. TemplateBasedVMs use its '
+            'template\'s value by default.')
+
+    debug = vanir.property('debug', type=bool, default=False,
+        setter=vanir.property.bool,
+        doc='Turns on debugging features.')
+
+    # XXX what this exactly does?
+    # XXX shouldn't this go to standalone VM and TemplateVM, and leave here
+    #     only plain property?
+    default_user = vanir.property('default_user', type=str,
+        # pylint: disable=no-member
+        default=_default_with_template('default_user', 'user'),
+        setter=_setter_default_user,
+        doc='Default user to start applications as. TemplateBasedVMs use its '
+            'template\'s value by default.')
+
+    # pylint: enable=no-member
+
+#   @property
+#   def default_user(self):
+#       if self.template is not None:
+#           return self.template.default_user
+#       else:
+#           return self._default_user
+
+    qrexec_timeout = vanir.property('qrexec_timeout', type=int,
+        default=_default_with_template('qrexec_timeout',
+            lambda self: self.app.default_qrexec_timeout),
+        setter=_setter_positive_int,
+        doc='''Time in seconds after which qrexec connection attempt is deemed
+            failed. Operating system inside VM should be able to boot in this
+            time.''')
+
+    shutdown_timeout = vanir.property('shutdown_timeout', type=int,
+        default=_default_with_template('shutdown_timeout',
+            lambda self: self.app.default_shutdown_timeout),
+        setter=_setter_positive_int,
+        doc='''Time in seconds for shutdown of the VM, after which VM may be
+            forcefully powered off. Operating system inside VM should be
+            able to fully shutdown in this time.''')
+
+    autostart = vanir.property('autostart', default=False,
+        type=bool, setter=vanir.property.bool,
+        doc='''Setting this to `True` means that VM should be autostarted on
+            dom0 boot.''')
+
+    include_in_backups = vanir.property('include_in_backups',
+        default=True,
+        type=bool, setter=vanir.property.bool,
+        doc='If this domain is to be included in default backup.')
+
+    backup_timestamp = vanir.property('backup_timestamp', default=None,
+        type=int,
+        doc='Time of last backup of the vanir, in seconds since unix epoch')
+
+    default_dispvm = vanir.VMProperty('default_dispvm',
+        load_stage=4,
+        allow_none=True,
+        default=(lambda self: self.app.default_dispvm),
+        doc='Default VM to be used as Disposable VM for service calls.')
+
+    management_dispvm = vanir.VMProperty('management_dispvm',
+        load_stage=4,
+        allow_none=True,
+        default=_default_with_template('management_dispvm',
+            (lambda self: self.app.management_dispvm)),
+        doc='Default DVM template for Disposable VM for managing this VM.')
+
+    updateable = vanir.property('updateable',
+        default=(lambda self: not hasattr(self, 'template')),
+        type=bool,
+        setter=vanir.property.forbidden,
+        doc='True if this machine may be updated on its own.')
+
+    #
+    # static, class-wide properties
+    #
+
+    #
+    # properties not loaded from XML, calculated at run-time
+    #
+
+    def __str__(self):
+        return self.name
+
+    # VMM-related
+
+    @vanir.stateless_property
+    def xid(self):
+        '''Xen ID.
+        Or not Xen, but ID.
+        '''
+
+        if self.libvirt_domain is None:
+            return -1
+        try:
+            return self.libvirt_domain.ID()
+        except libvirt.libvirtError as e:
+            if e.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                return -1
+            self.log.exception('libvirt error code: {!r}'.format(
+                e.get_error_code()))
+            raise
+
+    @vanir.stateless_property
+    def stubdom_xid(self):
+        if not self.is_running():
+            return -1
+
+        if self.app.vmm.xs is None:
+            return -1
+
+        stubdom_xid_str = self.app.vmm.xs.read('',
+            '/local/domain/{}/image/device-model-domid'.format(self.xid))
+        if stubdom_xid_str is None or not stubdom_xid_str.isdigit():
+            return -1
+
+        return int(stubdom_xid_str)
+
+    @property
+    def attached_volumes(self):
+        result = []
+        xml_desc = self.libvirt_domain.XMLDesc()
+        xml = lxml.etree.fromstring(xml_desc)
+        for disk in xml.xpath("//domain/devices/disk"):
+            if disk.find('backenddomain') is not None:
+                pool_name = 'p_%s' % disk.find('backenddomain').get('name')
+                pool = self.app.pools[pool_name]
+                vid = disk.find('source').get('dev').split('/dev/')[1]
+                for volume in pool.volumes:
+                    if volume.vid == vid:
+                        result += [volume]
+                        break
+
+        return result + list(self.volumes.values())
+
+    @property
+    def libvirt_domain(self):
+        '''Libvirt domain object from libvirt.
+        May be :py:obj:`None`, if libvirt knows nothing about this domain.
+        '''
+
+        if self._libvirt_domain is not None:
+            return self._libvirt_domain
+
+        if self.app.vmm.offline_mode:
+            return None
+
+        # XXX _update_libvirt_domain?
+        try:
+            self._libvirt_domain = self.app.vmm.libvirt_conn.lookupByUUID(
+                self.uuid.bytes)
+        except libvirt.libvirtError as e:
+            if e.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                self._update_libvirt_domain()
+            else:
+                raise
+        return self._libvirt_domain
+
+    @property
+    def block_devices(self):
+        ''' Return all :py:class:`vanir.storage.BlockDevice` for current domain
+        for serialization in the libvirt XML template as <disk>.
+        '''
+        for v in self.volumes.values():
+            block_dev = v.block_device()
+            if block_dev is not None:
+                yield block_dev
+
+    @property
+    def untrusted_qdb(self):
+        '''VanirDB handle for this domain.'''
+        if self._qdb_connection is None:
+            if self.is_running():
+                import vanirdb  # pylint: disable=import-error
+                self._qdb_connection = vanirdb.VanirDB(self.name)
+        return self._qdb_connection
+
+    @property
+    def dir_path(self):
+        '''Root directory for files related to this domain'''
+        return os.path.join(
+            vanir.config.qubes_base_dir,
+            self.dir_path_prefix,
+            self.name)
+
+    @property
+    def icon_path(self):
+        return os.path.join(self.dir_path, 'icon.png')
+
+    @property
+    def conf_file(self):
+        return os.path.join(self.dir_path, 'libvirt.xml')
+
+    # network-related
+
+    #
+    # constructor
+    #
+
+    def __init__(self, app, xml, volume_config=None, **kwargs):
+        # migrate renamed properties
+        if xml is not None:
+            node_hvm = xml.find('./properties/property[@name=\'hvm\']')
+            if node_hvm is not None:
+                if vanir.property.bool(None, None, node_hvm.text):
+                    kwargs['virt_mode'] = 'hvm'
+                else:
+                    kwargs['virt_mode'] = 'pv'
+                node_hvm.getparent().remove(node_hvm)
+
+        super(VanirVM, self).__init__(app, xml, **kwargs)
+
+        if volume_config is None:
+            volume_config = {}
+
+        if hasattr(self, 'volume_config'):
+            if xml is not None:
+                for node in xml.xpath('volume-config/volume'):
+                    name = node.get('name')
+                    assert name
+                    for key, value in node.items():
+                        # pylint: disable=no-member
+                        if value == 'True':
+                            value = True
+                        try:
+                            self.volume_config[name][key] = value
+                        except KeyError:
+                            self.volume_config[name] = {key: value}
+
+            for name, conf in volume_config.items():
+                for key, value in conf.items():
+                    # pylint: disable=no-member
+                    try:
+                        self.volume_config[name][key] = value
+                    except KeyError:
+                        self.volume_config[name] = {key: value}
+
+        elif volume_config:
+            raise TypeError(
+                'volume_config specified, but {} did not expect that.'.format(
+                self.__class__.__name__))
+
+        # Init private attrs
+
+        self._libvirt_domain = None
+        self._qdb_connection = None
+
+        # We assume a fully halted VM here. The 'domain-init' handler will
+        # check if the VM is already running.
+        self._domain_stopped_event_received = True
+        self._domain_stopped_event_handled = True
+
+        self._domain_stopped_future = None
+
+        # Internal lock to ensure ordering between _domain_stopped_coro() and
+        # start(). This should not be accessed anywhere else.
+        self._domain_stopped_lock = asyncio.Lock()
+
+        if xml is None:
+            # we are creating new VM and attributes came through kwargs
+            assert hasattr(self, 'qid')
+            assert hasattr(self, 'name')
+
+        if xml is None:
+            # new vanir, disable updates check if requested for new vanir
+            # SEE: 1637 when features are done, migrate to plugin
+            if not self.app.check_updates_vm:
+                self.features['check-updates'] = False
+
+        # will be initialized after loading all the properties
+
+        #: operations which shouldn't happen simultaneously with vanir startup
+        #  (including another startup of the same vanir)
+        self.startup_lock = asyncio.Lock()
+
+        # fire hooks
+        if xml is None:
+            self.events_enabled = True
+        self.fire_event('domain-init')
+
+    def close(self):
+        if self._qdb_connection is not None:
+            self._qdb_connection.close()
+            self._qdb_connection = None
+        if self._libvirt_domain is not None:
+            self._libvirt_domain = None
+        super().close()
+
+    def __hash__(self):
+        return self.qid
+
+    def __lt__(self, other):
+        return self.name < other.name
+
+    def __xml__(self):
+        # pylint: disable=no-member
+        element = super(VanirVM, self).__xml__()
+        # pylint: enable=no-member
+
+        if hasattr(self, 'volumes'):
+            volume_config_node = lxml.etree.Element('volume-config')
+            for volume in self.volumes.values():
+                volume_config_node.append(volume.__xml__())
+            element.append(volume_config_node)
+
+        return element
+
+    #
+    # event handlers
+    #
+
+    @vanir.events.handler('domain-init', 'domain-load')
+    def on_domain_init_loaded(self, event):
+        # pylint: disable=unused-argument
+        if not hasattr(self, 'uuid'):
+            # pylint: disable=attribute-defined-outside-init
+            self.uuid = uuid.uuid4()
+
+        # Initialize VM image storage class;
+        # it might be already initialized by a recursive call from a child VM
+        if self.storage is None:
+            self.storage = vanir.storage.Storage(self)
+
+        if not self.app.vmm.offline_mode and self.is_running():
+            self.start_qdb_watch()
+            self._domain_stopped_event_received = False
+            self._domain_stopped_event_handled = False
+
+    @vanir.events.handler('property-set:label')
+    def on_property_set_label(self, event, name, newvalue, oldvalue=None):
+        # pylint: disable=unused-argument
+        if self.icon_path:
+            try:
+                os.remove(self.icon_path)
+            except OSError:
+                pass
+            if hasattr(os, "symlink"):
+                os.symlink(newvalue.icon_path, self.icon_path)
+                subprocess.call(['sudo', 'xdg-icon-resource', 'forceupdate'])
+            else:
+                shutil.copy(newvalue.icon_path, self.icon_path)
+
+    @vanir.events.handler('property-pre-set:kernel')
+    def on_property_pre_set_kernel(self, event, name, newvalue, oldvalue=None):
+        # pylint: disable=unused-argument
+        if not newvalue:
+            return
+        dirname = os.path.join(
+            vanir.config.qubes_base_dir,
+            vanir.config.system_path['qubes_kernels_base_dir'],
+            newvalue)
+        if not os.path.exists(dirname):
+            raise vanir.exc.VanirPropertyValueError(self,
+                self.property_get_def(name), newvalue,
+                'Kernel {!r} not installed'.format(newvalue))
+        for filename in ('vmlinuz', 'initramfs'):
+            if not os.path.exists(os.path.join(dirname, filename)):
+                raise vanir.exc.VanirPropertyValueError(self,
+                    self.property_get_def(name), newvalue,
+                    'Kernel {!r} not properly installed: '
+                    'missing {!r} file'.format(newvalue, filename))
+
+    @vanir.events.handler('property-pre-set:autostart')
+    def on_property_pre_set_autostart(self, event, name, newvalue,
+            oldvalue=None):
+        # pylint: disable=unused-argument
+        # workaround https://bugzilla.redhat.com/show_bug.cgi?id=1181922
+        if newvalue:
+            retcode = subprocess.call(
+                ["sudo", "ln", "-sf",
+                 "/usr/lib/systemd/system/vanir-vm@.service",
+                 "/etc/systemd/system/multi-user.target.wants/vanir-vm@"
+                 "{}.service".format(self.name)])
+        else:
+            retcode = subprocess.call(
+                ['sudo', 'systemctl', 'disable',
+                    'vanir-vm@{}.service'.format(self.name)])
+        if retcode:
+            raise vanir.exc.VanirException(
+                'Failed to set autostart for VM in systemd')
+
+    @vanir.events.handler('property-pre-del:autostart')
+    def on_property_pre_del_autostart(self, event, name, oldvalue=None):
+        # pylint: disable=unused-argument
+        if oldvalue:
+            retcode = subprocess.call(
+                ['sudo', 'systemctl', 'disable',
+                    'vanir-vm@{}.service'.format(self.name)])
+            if retcode:
+                raise vanir.exc.VanirException(
+                    'Failed to reset autostart for VM in systemd')
+
+    @vanir.events.handler('domain-remove-from-disk')
+    def on_remove_from_disk(self, event, **kwargs):
+        # pylint: disable=unused-argument
+        if self.autostart:
+            subprocess.call(
+                ['sudo', 'systemctl', 'disable',
+                    'vanir-vm@{}.service'.format(self.name)])
+
+    @vanir.events.handler('domain-create-on-disk')
+    def on_create_on_disk(self, event, **kwargs):
+        # pylint: disable=unused-argument
+        if self.autostart:
+            subprocess.call(
+                ['sudo', 'systemctl', 'enable',
+                    'vanir-vm@{}.service'.format(self.name)])
+
+    #
+    # methods for changing domain state
+    #
+
+    @asyncio.coroutine
+    def _ensure_shutdown_handled(self):
+        '''Make sure previous shutdown is fully handled.
+        MUST NOT be called when domain is running.
+        '''
+        with (yield from self._domain_stopped_lock):
+            # Don't accept any new stopped event's till a new VM has been
+            # created. If we didn't received any stopped event or it wasn't
+            # handled yet we will handle this in the next lines.
+            self._domain_stopped_event_received = True
+
+            if self._domain_stopped_future is not None:
+                # Libvirt stopped event was already received, so cancel the
+                # future. If it didn't generate the Vanir events yet we
+                # will do it below.
+                self._domain_stopped_future.cancel()
+                self._domain_stopped_future = None
+
+            if not self._domain_stopped_event_handled:
+                # No Vanir domain-stopped events have been generated yet.
+                # So do this now.
+
+                # Set this immediately such that we don't generate events
+                # twice if an exception gets thrown.
+                self._domain_stopped_event_handled = True
+
+                yield from self.fire_event_async('domain-stopped')
+                yield from self.fire_event_async('domain-shutdown')
+
+
+    @asyncio.coroutine
+    def start(self, start_guid=True, notify_function=None,
+            mem_required=None):
+        '''Start domain
+        :param bool start_guid: FIXME
+        :param collections.Callable notify_function: FIXME
+        :param int mem_required: FIXME
+        '''
+
+        with (yield from self.startup_lock):
+            # Intentionally not used is_running(): eliminate also "Paused",
+            # "Crashed", "Halting"
+            if self.get_power_state() != 'Halted':
+                return self
+
+            yield from self._ensure_shutdown_handled()
+
+            self.log.info('Starting {}'.format(self.name))
+
+            try:
+                yield from self.fire_event_async('domain-pre-start',
+                    pre_event=True,
+                    start_guid=start_guid, mem_required=mem_required)
+            except Exception as exc:
+                yield from self.fire_event_async('domain-start-failed',
+                    reason=str(exc))
+                raise
+
+            qmemman_client = None
+            try:
+                for devclass in self.devices:
+                    for dev in self.devices[devclass].persistent():
+                        if isinstance(dev, vanir.devices.UnknownDevice):
+                            raise vanir.exc.VanirException(
+                                '{} device {} not available'.format(
+                                    devclass, dev))
+
+                if self.virt_mode == 'pvh' and not self.kernel:
+                    raise vanir.exc.VanirException(
+                        'virt_mode PVH require kernel to be set')
+                yield from self.storage.verify()
+
+                if self.netvm is not None:
+                    # pylint: disable = no-member
+                    if self.netvm.qid != 0:
+                        if not self.netvm.is_running():
+                            yield from self.netvm.start(start_guid=start_guid,
+                                notify_function=notify_function)
+
+                qmemman_client = yield from asyncio.get_event_loop().\
+                    run_in_executor(None, self.request_memory, mem_required)
+
+                yield from self.storage.start()
+
+            except Exception as exc:
+                # let anyone receiving domain-pre-start know that startup failed
+                yield from self.fire_event_async('domain-start-failed',
+                    reason=str(exc))
+                if qmemman_client:
+                    qmemman_client.close()
+                raise
+
+            try:
+                self._update_libvirt_domain()
+
+                self.libvirt_domain.createWithFlags(
+                    libvirt.VIR_DOMAIN_START_PAUSED)
+
+            except Exception as exc:
+                self.log.error('Start failed: %s', str(exc))
+                # let anyone receiving domain-pre-start know that startup failed
+                yield from self.fire_event_async('domain-start-failed',
+                    reason=str(exc))
+                yield from self.storage.stop()
+                raise
+
+            finally:
+                if qmemman_client:
+                    qmemman_client.close()
+
+            self._domain_stopped_event_received = False
+            self._domain_stopped_event_handled = False
+
+            try:
+                yield from self.fire_event_async('domain-spawn',
+                    start_guid=start_guid)
+
+                self.log.info('Setting Vanir DB info for the VM')
+                yield from self.start_qubesdb()
+                self.create_qdb_entries()
+                self.start_qdb_watch()
+
+                self.log.warning('Activating the {} VM'.format(self.name))
+                self.libvirt_domain.resume()
+
+                yield from self.start_qrexec_daemon()
+
+                yield from self.fire_event_async('domain-start',
+                    start_guid=start_guid)
+
+            except Exception as exc:  # pylint: disable=bare-except
+                self.log.error('Start failed: %s', str(exc))
+                # This avoids losing the exception if an exception is
+                # raised in self.force_shutdown(), because the vm is not
+                # running or paused
+                try:
+                    yield from self._kill_locked()
+                except vanir.exc.VanirVMNotStartedError:
+                    pass
+
+                # let anyone receiving domain-pre-start know that startup failed
+                yield from self.fire_event_async('domain-start-failed',
+                    reason=str(exc))
+                raise
+
+        return self
+
+    def on_libvirt_domain_stopped(self):
+        ''' Handle VIR_DOMAIN_EVENT_STOPPED events from libvirt.
+        This is not a Vanir event handler. Instead we do some sanity checks
+        and synchronization with start() and then emits Vanir events.
+        '''
+
+        state = self.get_power_state()
+        if state not in ['Halted', 'Crashed', 'Dying']:
+            self.log.warning('Stopped event from libvirt received,'
+                ' but domain is in state {}!'.format(state))
+            # ignore this unexpected event
+            return
+
+        if self._domain_stopped_event_received:
+            # ignore this event - already triggered by shutdown(), kill(),
+            # or subsequent start()
+            return
+
+        self._domain_stopped_event_received = True
+        self._domain_stopped_future = \
+            asyncio.ensure_future(self._domain_stopped_coro())
+
+    @asyncio.coroutine
+    def _domain_stopped_coro(self):
+        with (yield from self._domain_stopped_lock):
+            assert not self._domain_stopped_event_handled
+
+            # Set this immediately such that we don't generate events twice if
+            # an exception gets thrown.
+            self._domain_stopped_event_handled = True
+
+            while self.get_power_state() == 'Dying':
+                yield from asyncio.sleep(0.25)
+            yield from self.fire_event_async('domain-stopped')
+            yield from self.fire_event_async('domain-shutdown')
+
+    @vanir.events.handler('domain-stopped')
+    @asyncio.coroutine
+    def on_domain_stopped(self, _event, **_kwargs):
+        '''Cleanup after domain was stopped'''
+        try:
+            yield from self.storage.stop()
+        except vanir.storage.StoragePoolException:
+            self.log.exception('Failed to stop storage for domain %s',
+                self.name)
+
+    @asyncio.coroutine
+    def shutdown(self, force=False, wait=False, timeout=None):
+        '''Shutdown domain.
+        :param force: ignored
+        :param wait: wait for shutdown to complete
+        :param timeout: shutdown wait timeout (for *wait*=True), defaults to
+        :py:attr:`shutdown_timeout`
+        :raises vanir.exc.VanirVMNotStartedError: \
+            when domain is already shut down.
+        '''
+
+        if self.is_halted():
+            raise vanir.exc.VanirVMNotStartedError(self)
+
+        yield from self.fire_event_async('domain-pre-shutdown', pre_event=True,
+            force=force)
+
+        self.libvirt_domain.shutdown()
+
+        if wait:
+            if timeout is None:
+                timeout = self.shutdown_timeout
+            while timeout > 0 and not self.is_halted():
+                yield from asyncio.sleep(0.25)
+                timeout -= 0.25
+            with (yield from self.startup_lock):
+                if self.is_halted():
+                    # make sure all shutdown tasks are completed
+                    yield from self._ensure_shutdown_handled()
+                else:
+                    raise vanir.exc.VanirVMShutdownTimeoutError(self)
+
+        return self
+
+    @asyncio.coroutine
+    def kill(self):
+        '''Forcefully shutdown (destroy) domain.
+        :raises vanir.exc.VanirVMNotStartedError: \
+            when domain is already shut down.
+        '''
+
+        if not self.is_running() and not self.is_paused():
+            raise vanir.exc.VanirVMNotStartedError(self)
+
+        with (yield from self.startup_lock):
+            yield from self._kill_locked()
+
+        return self
+
+    @asyncio.coroutine
+    def _kill_locked(self):
+        '''Forcefully shutdown (destroy) domain.
+        This function needs to be called with self.startup_lock held.'''
+        try:
+            self.libvirt_domain.destroy()
+        except libvirt.libvirtError as e:
+            if e.get_error_code() == libvirt.VIR_ERR_OPERATION_INVALID:
+                raise vanir.exc.VanirVMNotStartedError(self)
+            raise
+
+        # make sure all shutdown tasks are completed
+        yield from self._ensure_shutdown_handled()
+
+    def force_shutdown(self, *args, **kwargs):
+        '''Deprecated alias for :py:meth:`kill`'''
+        warnings.warn(
+            'Call to deprecated function force_shutdown(), use kill() instead',
+            DeprecationWarning, stacklevel=2)
+        return self.kill(*args, **kwargs)
+
+    @asyncio.coroutine
+    def suspend(self):
+        '''Suspend (pause) domain.
+        :raises vanir.exc.VanirVMNotRunnignError: \
+            when domain is already shut down.
+        '''
+
+        if not self.is_running() and not self.is_paused():
+            raise vanir.exc.VanirVMNotRunningError(self)
+
+        if list(self.devices['pci'].attached()):
+            if self.features.check_with_template('qrexec', False):
+                yield from self.run_service_for_stdio('vanir.SuspendPre',
+                    user='root')
+            self.libvirt_domain.pMSuspendForDuration(
+                libvirt.VIR_NODE_SUSPEND_TARGET_MEM, 0, 0)
+        else:
+            self.libvirt_domain.suspend()
+
+        return self
+
+    @asyncio.coroutine
+    def pause(self):
+        '''Pause (suspend) domain.'''
+
+        if not self.is_running():
+            raise vanir.exc.VanirVMNotRunningError(self)
+
+        self.libvirt_domain.suspend()
+
+        return self
+
+    @asyncio.coroutine
+    def resume(self):
+        '''Resume suspended domain.
+        :raises vanir.exc.VanirVMNotSuspendedError: when machine is not paused
+        :raises vanir.exc.VanirVMError: when machine is suspended
+        '''
+
+        # pylint: disable=not-an-iterable
+        if self.get_power_state() == "Suspended":
+            self.libvirt_domain.pMWakeup()
+            if self.features.check_with_template('qrexec', False):
+                yield from self.run_service_for_stdio('vanir.SuspendPost',
+                    user='root')
+        else:
+            yield from self.unpause()
+
+        return self
+
+    @asyncio.coroutine
+    def unpause(self):
+        '''Resume (unpause) a domain'''
+        if not self.is_paused():
+            raise vanir.exc.VanirVMNotPausedError(self)
+
+        self.libvirt_domain.resume()
+
+        return self
+
+    @asyncio.coroutine
+    def run_service(self, service, source=None, user=None,
+            filter_esc=False, autostart=False, gui=False, **kwargs):
+        '''Run service on this VM
+        :param str service: service name
+        :param vanir.vm.vanirvm.VanirVM source: source domain as presented to
+            this VM
+        :param str user: username to run service as
+        :param bool filter_esc: filter escape sequences to protect terminal \
+            emulator
+        :param bool autostart: if :py:obj:`True`, machine will be started if \
+            it is not running
+        :param bool gui: when autostarting, also start gui daemon
+        :rtype: asyncio.subprocess.Process
+        .. note::
+            User ``root`` is redefined to ``SYSTEM`` in the Windows agent code
+        '''
+
+        # UNSUPPORTED from previous incarnation:
+        #   localcmd, wait, passio*, notify_function, `-e` switch
+        #
+        # - passio* and friends depend on params to command (like in stdlib)
+        # - the filter_esc is orthogonal to passio*
+        # - input: see run_service_for_stdio
+        # - wait has no purpose since this is asynchronous
+        # - notify_function is gone
+
+        source = 'dom0' if source is None else self.app.domains[source].name
+
+        if user is None:
+            user = self.default_user
+
+        if self.is_paused():
+            # XXX what about autostart?
+            raise vanir.exc.VanirVMNotRunningError(
+                self, 'Domain {!r} is paused'.format(self.name))
+        if not self.is_running():
+            if not autostart:
+                raise vanir.exc.VanirVMNotRunningError(self)
+            yield from self.start(start_guid=gui)
+
+        if not self.is_qrexec_running():
+            raise vanir.exc.VanirVMError(
+                self, 'Domain {!r}: qrexec not connected'.format(self.name))
+
+        yield from self.fire_event_async('domain-cmd-pre-run', pre_event=True,
+            start_guid=gui)
+
+        return (yield from asyncio.create_subprocess_exec(
+            vanir.config.system_path['qrexec_client_path'],
+            '-d', str(self.name),
+            *(('-t', '-T') if filter_esc else ()),
+            '{}:QUBESRPC {} {}'.format(user, service, source),
+            **kwargs))
+
+    @asyncio.coroutine
+    def run_service_for_stdio(self, *args, input=None, **kwargs):
+        '''Run a service, pass an optional input and return (stdout, stderr).
+        Raises an exception if return code != 0.
+        *args* and *kwargs* are passed verbatim to :py:meth:`run_service`.
+        .. warning::
+            There are some combinations if stdio-related *kwargs*, which are
+            not filtered for problems originating between the keyboard and the
+            chair.
+        '''  # pylint: disable=redefined-builtin
+
+        kwargs.setdefault('stdin', subprocess.PIPE)
+        kwargs.setdefault('stdout', subprocess.PIPE)
+        kwargs.setdefault('stderr', subprocess.PIPE)
+        p = yield from self.run_service(*args, **kwargs)
+
+        # this one is actually a tuple, but there is no need to unpack it
+        stdouterr = yield from p.communicate(input=input)
+
+        if p.returncode:
+            raise subprocess.CalledProcessError(p.returncode,
+                args[0], *stdouterr)
+
+        return stdouterr
+
+    @staticmethod
+    def _prepare_input_for_vmshell(command, input):
+        '''Prepare shell input for the given command and optional (real) input
+        '''  # pylint: disable=redefined-builtin
+        if input is None:
+            input = b''
+        return b''.join((command.rstrip('\n').encode('utf-8'), b'\n', input))
+
+    def run(self, command, user=None, **kwargs):
+        '''Run a shell command inside the domain using qrexec.
+        This method is a coroutine.
+        '''  # pylint: disable=redefined-builtin
+
+        if user is None:
+            user = self.default_user
+
+        return asyncio.create_subprocess_exec(
+            vanir.config.system_path['qrexec_client_path'],
+            '-d', str(self.name),
+            '{}:{}'.format(user, command),
+            **kwargs)
+
+    @asyncio.coroutine
+    def run_for_stdio(self, *args, input=None, **kwargs):
+        '''Run a shell command inside the domain using vanir.VMShell qrexec.
+        This method is a coroutine.
+        *kwargs* are passed verbatim to :py:meth:`run_service_for_stdio`.
+        See disclaimer there.
+        '''  # pylint: disable=redefined-builtin
+
+        kwargs.setdefault('stdin', subprocess.PIPE)
+        kwargs.setdefault('stdout', subprocess.PIPE)
+        kwargs.setdefault('stderr', subprocess.PIPE)
+        p = yield from self.run(*args, **kwargs)
+        stdouterr = yield from p.communicate(input=input)
+
+        if p.returncode:
+            raise subprocess.CalledProcessError(p.returncode,
+                args[0], *stdouterr)
+
+        return stdouterr
+
+    def is_memory_balancing_possible(self):
+        '''Check if memory balancing can be enabled.
+        Reasons to not enable it:
+         - have PCI devices
+         - balloon driver not present
+        We don't have reliable way to detect the second point, but good
+        heuristic is HVM virt_mode (PV and PVH require OS support and it does
+        include balloon driver) and lack of qrexec/meminfo-writer service
+        support (no vanir tools installed).
+        '''
+        if list(self.devices['pci'].persistent()):
+            return False
+        if self.virt_mode == 'hvm':
+            # if VM announce any supported service
+            features_set = set(self.features)
+            template = getattr(self, 'template', None)
+            while template is not None:
+                features_set.update(template.features)
+                template = getattr(template, 'template', None)
+            supported_services = any(f.startswith('supported-service.')
+                for f in features_set)
+            if (not self.features.check_with_template('qrexec', False) or
+                (supported_services and not self.features.check_with_template(
+                    'supported-service.meminfo-writer', False))):
+                return False
+        return True
+
+    def request_memory(self, mem_required=None):
+        if not qmemman_present:
+            return None
+
+        if mem_required is None:
+            if self.virt_mode == 'hvm':
+                if self.stubdom_mem:
+                    stubdom_mem = self.stubdom_mem
+                else:
+                    if self.features.check_with_template('linux-stubdom', True):
+                        stubdom_mem = 128 # from libxl_create.c
+                    else:
+                        stubdom_mem = 28 # from libxl_create.c
+                stubdom_mem += 16 # video ram
+            else:
+                stubdom_mem = 0
+
+            initial_memory = self.memory
+            mem_required = int(initial_memory + stubdom_mem) * 1024 * 1024
+
+        qmemman_client = vanir.qmemman.client.QMemmanClient()
+        try:
+            mem_required_with_overhead = mem_required + MEM_OVERHEAD_BASE \
+                + self.vcpus * MEM_OVERHEAD_PER_VCPU
+            got_memory = qmemman_client.request_memory(
+                mem_required_with_overhead)
+
+        except IOError as e:
+            raise IOError('Failed to connect to qmemman: {!s}'.format(e))
+
+        if not got_memory:
+            qmemman_client.close()
+            raise vanir.exc.QubesMemoryError(self)
+
+        return qmemman_client
+
+    @staticmethod
+    @asyncio.coroutine
+    def start_daemon(*command, input=None, **kwargs):
+        '''Start a daemon for the VM
+        This function take care to run it as appropriate user.
+        :param command: command to run (array for
+            :py:meth:`subprocess.check_call`)
+        :param kwargs: args for :py:meth:`subprocess.check_call`
+        :return: None
+        '''  # pylint: disable=redefined-builtin
+
+        if os.getuid() == 0:
+            # try to always have VM daemons running as normal user, otherwise
+            # some files (like clipboard) may be created as root and cause
+            # permission problems
+            qubes_group = grp.getgrnam('vanir')
+            command = ['runuser', '-u', qubes_group.gr_mem[0], '--'] + \
+                list(command)
+        p = yield from asyncio.create_subprocess_exec(*command, **kwargs)
+        stdout, stderr = yield from p.communicate(input=input)
+        if p.returncode:
+            raise subprocess.CalledProcessError(p.returncode, command,
+                output=stdout, stderr=stderr)
+
+    @asyncio.coroutine
+    def start_qrexec_daemon(self):
+        '''Start qrexec daemon.
+        :raises OSError: when starting fails.
+        '''
+
+        self.log.debug('Starting the qrexec daemon')
+        qrexec_args = [str(self.xid), self.name, self.default_user]
+        if not self.debug:
+            qrexec_args.insert(0, "-q")
+
+        qrexec_env = os.environ.copy()
+        if not self.features.check_with_template('qrexec', False):
+            self.log.debug(
+                'Starting the qrexec daemon in background, because of features')
+            qrexec_env['QREXEC_STARTUP_NOWAIT'] = '1'
+        else:
+            qrexec_env['QREXEC_STARTUP_TIMEOUT'] = str(self.qrexec_timeout)
+
+        try:
+            yield from self.start_daemon(
+                vanir.config.system_path['qrexec_daemon_path'], *qrexec_args,
+                env=qrexec_env, stderr=subprocess.PIPE)
+        except subprocess.CalledProcessError as err:
+            if err.returncode == 3:
+                raise vanir.exc.VanirVMError(self,
+                    'Cannot connect to qrexec agent for {} seconds, '
+                    'see /var/log/xen/console/guest-{}.log for details'.format(
+                        self.qrexec_timeout, self.name
+                    ))
+            raise vanir.exc.VanirVMError(self,
+                'qrexec-daemon startup failed: ' + err.stderr.decode())
+
+    @asyncio.coroutine
+    def start_qubesdb(self):
+        '''Start VanirDB daemon.
+        :raises OSError: when starting fails.
+        '''
+
+        # drop old connection to VanirDB, if any
+        self._qdb_connection = None
+
+        self.log.info('Starting Vanir DB')
+        try:
+            yield from self.start_daemon(
+                vanir.config.system_path['qubesdb_daemon_path'],
+                str(self.xid),
+                self.name)
+        except subprocess.CalledProcessError:
+            raise vanir.exc.VanirException('Cannot execute vanirdb-daemon')
+
+    @asyncio.coroutine
+    def create_on_disk(self, pool=None, pools=None):
+        '''Create files needed for VM.
+        '''
+
+        self.log.info('Creating directory: {0}'.format(self.dir_path))
+        os.makedirs(self.dir_path, mode=0o775, exist_ok=True)
+
+        if pool or pools:
+            # pylint: disable=attribute-defined-outside-init
+            self.volume_config = _patch_volume_config(self.volume_config, pool,
+                                                      pools)
+            self.storage = vanir.storage.Storage(self)
+
+        try:
+            yield from self.storage.create()
+        except:
+            try:
+                yield from self.storage.remove()
+                os.rmdir(self.dir_path)
+            except:  # pylint: disable=bare-except
+                self.log.exception('failed to cleanup {} after failed VM '
+                                   'creation'.format(self.dir_path))
+            raise
+
+        if os.path.exists(self.icon_path):
+            os.unlink(self.icon_path)
+        self.log.info('Creating icon symlink: {} -> {}'.format(
+            self.icon_path, self.label.icon_path))
+        if hasattr(os, "symlink"):
+            os.symlink(self.label.icon_path, self.icon_path)
+        else:
+            shutil.copy(self.label.icon_path, self.icon_path)
+
+        # fire hooks
+        yield from self.fire_event_async('domain-create-on-disk')
+
+    @asyncio.coroutine
+    def remove_from_disk(self):
+        '''Remove domain remnants from disk.'''
+        if not self.is_halted():
+            raise vanir.exc.VanirVMNotHaltedError(
+                "Can't remove VM {!s}, beacuse it's in state {!r}.".format(
+                    self, self.get_power_state()))
+
+        # make sure shutdown is handled before removing anything, but only if
+        # handling is pending; if not, we may be called from within
+        # domain-shutdown event (DispVM._auto_cleanup), which would deadlock
+        if not self._domain_stopped_event_handled:
+            yield from self._ensure_shutdown_handled()
+
+        yield from self.fire_event_async('domain-remove-from-disk')
+        try:
+            # TODO: make it async?
+            shutil.rmtree(self.dir_path)
+        except FileNotFoundError:
+            pass
+        yield from self.storage.remove()
+
+    @asyncio.coroutine
+    def clone_disk_files(self, src, pool=None, pools=None, ):
+        '''Clone files from other vm.
+        :param vanir.vm.vanirvm.VanirVM src: source VM
+        '''
+
+        # If the current vm name is not a part of `self.app.domains.keys()`,
+        # then the current vm is in creation process. Calling
+        # `self.is_halted()` at this point, would instantiate libvirt, we want
+        # avoid that.
+        if self.name in self.app.domains.keys() and not self.is_halted():
+            raise vanir.exc.VanirVMNotHaltedError(
+                self, 'Cannot clone a running domain {!r}'.format(self.name))
+
+        msg = "Destination {!s} already exists".format(self.dir_path)
+        assert not os.path.exists(self.dir_path), msg
+
+        self.log.info('Creating directory: {0}'.format(self.dir_path))
+        os.makedirs(self.dir_path, mode=0o775, exist_ok=True)
+
+        if pool or pools:
+            # pylint: disable=attribute-defined-outside-init
+            self.volume_config = _patch_volume_config(self.volume_config, pool,
+                                                      pools)
+
+        self.storage = vanir.storage.Storage(self)
+        yield from self.storage.clone(src)
+        self.storage.verify()
+        assert self.volumes != {}
+
+        if src.icon_path is not None \
+                and os.path.exists(src.icon_path) \
+                and self.icon_path is not None:
+            if os.path.islink(src.icon_path):
+                icon_path = os.readlink(src.icon_path)
+                self.log.info(
+                    'Creating icon symlink {} -> {}'.format(
+                        self.icon_path, icon_path))
+                os.symlink(icon_path, self.icon_path)
+            else:
+                self.log.info(
+                    'Copying icon {} -> {}'.format(
+                        src.icon_path, self.icon_path))
+                shutil.copy(src.icon_path, self.icon_path)
+
+        # fire hooks
+        yield from self.fire_event_async('domain-clone-files', src=src)
+
+    #
+    # methods for querying domain state
+    #
+
+    # state of the machine
+
+    def get_power_state(self):
+        '''Return power state description string.
+        Return value may be one of those:
+        =============== ========================================================
+        return value    meaning
+        =============== ========================================================
+        ``'Halted'``    Machine is not active.
+        ``'Transient'`` Machine is running, but does not have :program:`guid`
+                        or :program:`qrexec` available.
+        ``'Running'``   Machine is ready and running.
+        ``'Paused'``    Machine is paused.
+        ``'Suspended'`` Machine is S3-suspended.
+        ``'Halting'``   Machine is in process of shutting down.
+        ``'Dying'``     Machine is still in process of shutting down.
+        ``'Crashed'``   Machine crashed and is unusable, probably because of
+                        bug in dom0.
+        ``'NA'``        Machine is in unknown state (most likely libvirt domain
+                        is undefined).
+        =============== ========================================================
+        FIXME: graph below may be incomplete and wrong. Click on method name to
+        see its documentation.
+        .. graphviz::
+            digraph {
+                node [fontname="sans-serif"];
+                edge [fontname="mono"];
+                Halted;
+                NA;
+                Dying;
+                Crashed;
+                Transient;
+                Halting;
+                Running;
+                Paused [color=gray75 fontcolor=gray75];
+                Suspended;
+                NA -> Halted;
+                Halted -> NA [constraint=false];
+                Halted -> Transient
+                    [xlabel="start()" URL="#vanir.vm.vanirvm.VanirVM.start"];
+                Transient -> Running;
+                Running -> Halting
+                    [xlabel="shutdown()"
+                        URL="#vanir.vm.vanirvm.VanirVM.shutdown"
+                        constraint=false];
+                Halting -> Dying -> Halted [constraint=false];
+                /* cosmetic, invisible edges to put rank constraint */
+                Dying -> Halting [style="invis"];
+                Halting -> Transient [style="invis"];
+                Running -> Halted
+                    [label="force_shutdown()"
+                        URL="#vanir.vm.vanirvm.VanirVM.force_shutdown"
+                        constraint=false];
+                Running -> Crashed [constraint=false];
+                Crashed -> Halted [constraint=false];
+                Running -> Paused
+                    [label="pause()" URL="#vanir.vm.vanirvm.VanirVM.pause"
+                        color=gray75 fontcolor=gray75];
+                Running -> Suspended
+                    [label="suspend()" URL="#vanir.vm.vanirvm.VanirVM.suspend"
+                        color=gray50 fontcolor=gray50];
+                Paused -> Running
+                    [label="unpause()" URL="#vanir.vm.vanirvm.VanirVM.unpause"
+                        color=gray75 fontcolor=gray75];
+                Suspended -> Running
+                    [label="resume()" URL="#vanir.vm.vanirvm.VanirVM.resume"
+                        color=gray50 fontcolor=gray50];
+                Running -> Suspended
+                    [label="suspend()" URL="#vanir.vm.vanirvm.VanirVM.suspend"];
+                Suspended -> Running
+                    [label="resume()" URL="#vanir.vm.vanirvm.VanirVM.resume"];
+                { rank=source; Halted NA };
+                { rank=same; Transient Halting };
+                { rank=same; Crashed Dying };
+                { rank=sink; Paused Suspended };
+            }
+        .. seealso::
+            http://wiki.libvirt.org/page/VM_lifecycle
+                Description of VM life cycle from the point of view of libvirt.
+            https://libvirt.org/html/libvirt-libvirt-domain.html#virDomainState
+                Libvirt's enum describing precise state of a domain.
+        '''  # pylint: disable=too-many-return-statements
+
+        # don't try to define libvirt domain, if it isn't there, VM surely
+        # isn't running
+        # reason for this "if": allow vm.is_running() in PCI (or other
+        # device) extension while constructing libvirt XML
+        if self.app.vmm.offline_mode:
+            return 'Halted'
+        if self._libvirt_domain is None:
+            try:
+                self._libvirt_domain = self.app.vmm.libvirt_conn.lookupByUUID(
+                    self.uuid.bytes)
+            except libvirt.libvirtError as e:
+                if e.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                    return 'Halted'
+                raise
+
+        libvirt_domain = self.libvirt_domain
+        if libvirt_domain is None:
+            return 'Halted'
+
+        try:
+            if libvirt_domain.isActive():
+                # pylint: disable=line-too-long
+                if libvirt_domain.state()[0] == libvirt.VIR_DOMAIN_PAUSED:
+                    return "Paused"
+                if libvirt_domain.state()[0] == libvirt.VIR_DOMAIN_CRASHED:
+                    return "Crashed"
+                if libvirt_domain.state()[0] == libvirt.VIR_DOMAIN_SHUTDOWN:
+                    return "Halting"
+                if libvirt_domain.state()[0] == libvirt.VIR_DOMAIN_SHUTOFF:
+                    return "Dying"
+                if libvirt_domain.state()[0] == libvirt.VIR_DOMAIN_PMSUSPENDED:  # nopep8
+                    return "Suspended"
+                if not self.is_fully_usable():
+                    return "Transient"
+                return "Running"
+
+            return 'Halted'
+        except libvirt.libvirtError as e:
+            if e.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                return 'Halted'
+            raise
+
+        assert False
+
+    def is_halted(self):
+        ''' Check whether this domain's state is 'Halted'
+            :returns: :py:obj:`True` if this domain is halted, \
+                :py:obj:`False` otherwise.
+            :rtype: bool
+        '''
+        return self.get_power_state() == 'Halted'
+
+    def is_running(self):
+        '''Check whether this domain is running.
+        :returns: :py:obj:`True` if this domain is started, \
+            :py:obj:`False` otherwise.
+        :rtype: bool
+        '''
+
+        if self.app.vmm.offline_mode:
+            return False
+
+        # don't try to define libvirt domain, if it isn't there, VM surely
+        # isn't running
+        # reason for this "if": allow vm.is_running() in PCI (or other
+        # device) extension while constructing libvirt XML
+        if self._libvirt_domain is None:
+            try:
+                self._libvirt_domain = self.app.vmm.libvirt_conn.lookupByUUID(
+                    self.uuid.bytes)
+            except libvirt.libvirtError as e:
+                if e.get_error_code() == libvirt.VIR_ERR_NO_DOMAIN:
+                    return False
+                raise
+
+        return bool(self.libvirt_domain.isActive())
+
+    def is_paused(self):
+        '''Check whether this domain is paused.
+        :returns: :py:obj:`True` if this domain is paused, \
+            :py:obj:`False` otherwise.
+        :rtype: bool
+        '''
+
+        return self.libvirt_domain \
+            and self.libvirt_domain.state()[0] == libvirt.VIR_DOMAIN_PAUSED
+
+    def is_qrexec_running(self):
+        '''Check whether qrexec for this domain is available.
+        :returns: :py:obj:`True` if qrexec is running, \
+            :py:obj:`False` otherwise.
+        :rtype: bool
+        '''
+        if self.xid < 0:  # pylint: disable=comparison-with-callable
+            return False
+        return os.path.exists('/var/run/vanir/qrexec.%s' % self.name)
+
+    def is_fully_usable(self):
+        return all(self.fire_event('domain-is-fully-usable'))
+
+    @vanir.events.handler('domain-is-fully-usable')
+    def on_domain_is_fully_usable(self, event):
+        '''Check whether domain is running and sane.
+        Currently this checks for running qrexec.
+        '''  # pylint: disable=unused-argument
+
+        # Running gui-daemon implies also VM running
+        if not self.is_qrexec_running():
+            yield False
+
+    # memory and disk
+
+    def get_mem(self):
+        '''Get current memory usage from VM.
+        :returns: Memory usage [FIXME unit].
+        :rtype: FIXME
+        '''
+
+        if self.libvirt_domain is None:
+            return 0
+
+        try:
+            if not self.libvirt_domain.isActive():
+                return 0
+            return self.libvirt_domain.info()[1]
+
+        except libvirt.libvirtError as e:
+            if e.get_error_code() in (
+                    # vanir no longer exists
+                    libvirt.VIR_ERR_NO_DOMAIN,
+
+                    # libxl_domain_info failed (race condition from isActive)
+                    libvirt.VIR_ERR_INTERNAL_ERROR):
+                return 0
+
+            self.log.exception(
+                'libvirt error code: {!r}'.format(e.get_error_code()))
+            raise
+
+    def get_mem_static_max(self):
+        '''Get maximum memory available to VM.
+        :returns: Memory limit [FIXME unit].
+        :rtype: FIXME
+        '''
+
+        if self.libvirt_domain is None:
+            return 0
+
+        try:
+            return self.libvirt_domain.maxMemory()
+
+        except libvirt.libvirtError as e:
+            if e.get_error_code() in (
+                    # vanir no longer exists
+                    libvirt.VIR_ERR_NO_DOMAIN,
+
+                    # libxl_domain_info failed (race condition from isActive)
+                    libvirt.VIR_ERR_INTERNAL_ERROR):
+                return 0
+
+            self.log.exception(
+                'libvirt error code: {!r}'.format(e.get_error_code()))
+            raise
+
+    def get_cputime(self):
+        '''Get total CPU time burned by this domain since start.
+        :returns: CPU time usage [FIXME unit].
+        :rtype: FIXME
+        '''
+
+        if self.libvirt_domain is None:
+            return 0
+
+        if self.libvirt_domain is None:
+            return 0
+        if not self.libvirt_domain.isActive():
+            return 0
+
+        try:
+            if not self.libvirt_domain.isActive():
+                return 0
+
+        # this does not work, because libvirt
+#           return self.libvirt_domain.getCPUStats(
+#               libvirt.VIR_NODE_CPU_STATS_ALL_CPUS, 0)[0]['cpu_time']/10**9
+
+            return self.libvirt_domain.info()[4]
+
+        except libvirt.libvirtError as e:
+            if e.get_error_code() in (
+                    # vanir no longer exists
+                    libvirt.VIR_ERR_NO_DOMAIN,
+
+                    # libxl_domain_info failed (race condition from isActive)
+                    libvirt.VIR_ERR_INTERNAL_ERROR):
+                return 0
+
+            self.log.exception(
+                'libvirt error code: {!r}'.format(e.get_error_code()))
+            raise
+
+    # miscellanous
+
+    @vanir.stateless_property
+    def start_time(self):
+        '''Tell when machine was started.
+        :rtype: float or None
+        '''
+        if not self.is_running():
+            return None
+
+        # TODO shouldn't this be vanirdb?
+        start_time = self.app.vmm.xs.read('',
+            '/vm/{}/start_time'.format(self.uuid))
+        if start_time != '':
+            return float(start_time)
+
+        return None
+
+    @property
+    def kernelopts_common(self):
+        '''Kernel options which should be used in addition to *kernelopts*
+        property.
+        This is specific to kernel (and initrd if any)
+        '''
+        if not self.kernel:
+            return ''
+        kernels_dir = self.storage.kernels_dir
+
+        kernelopts_path = os.path.join(kernels_dir,
+            'default-kernelopts-common.txt')
+        if os.path.exists(kernelopts_path):
+            with open(kernelopts_path) as f_kernelopts:
+                return f_kernelopts.read().rstrip('\n\r')
+        else:
+            return vanir.config.defaults['kernelopts_common']
+
+    #
+    # helper methods
+    #
+
+    def relative_path(self, path):
+        '''Return path relative to py:attr:`dir_path`.
+        :param str path: Path in question.
+        :returns: Relative path.
+        '''
+
+        return os.path.relpath(path, self.dir_path)
+
+    def create_qdb_entries(self):
+        '''Create entries in Vanir DB.
+        '''
+        # pylint: disable=no-member
+
+        self.untrusted_qdb.write('/name', self.name)
+        self.untrusted_qdb.write('/type', self.__class__.__name__)
+        self.untrusted_qdb.write('/default-user', self.default_user)
+        self.untrusted_qdb.write('/vanir-vm-updateable', str(self.updateable))
+        self.untrusted_qdb.write('/vanir-vm-persistence',
+            'full' if self.updateable else 'rw-only')
+        self.untrusted_qdb.write('/vanir-debug-mode', str(int(self.debug)))
+        try:
+            self.untrusted_qdb.write('/vanir-base-template', self.template.name)
+        except AttributeError:
+            self.untrusted_qdb.write('/vanir-base-template', '')
+
+        self.untrusted_qdb.write('/vanir-random-seed',
+            base64.b64encode(vanir.utils.urandom(64)))
+
+        if self.provides_network:
+            # '/vanir-netvm-network' value is only checked for being non empty
+            self.untrusted_qdb.write('/vanir-netvm-network', str(self.gateway))
+            self.untrusted_qdb.write('/vanir-netvm-gateway', str(self.gateway))
+            if self.gateway6:
+                self.untrusted_qdb.write('/vanir-netvm-gateway6',
+                    str(self.gateway6))
+            self.untrusted_qdb.write('/vanir-netvm-netmask', str(self.netmask))
+
+            for i, addr in zip(('primary', 'secondary'), self.dns):
+                self.untrusted_qdb.write('/vanir-netvm-{}-dns'.format(i), addr)
+
+        if self.netvm is not None:
+            self.untrusted_qdb.write('/vanir-ip', str(self.visible_ip))
+            self.untrusted_qdb.write('/vanir-netmask',
+                str(self.visible_netmask))
+            self.untrusted_qdb.write('/vanir-gateway',
+                str(self.visible_gateway))
+
+            for i, addr in zip(('primary', 'secondary'), self.dns):
+                self.untrusted_qdb.write('/vanir-{}-dns'.format(i), str(addr))
+
+            if self.visible_ip6:
+                self.untrusted_qdb.write('/vanir-ip6', str(self.visible_ip6))
+            if self.visible_gateway6:
+                self.untrusted_qdb.write('/vanir-gateway6',
+                    str(self.visible_gateway6))
+
+
+        tzname = vanir.utils.get_timezone()
+        if tzname:
+            self.untrusted_qdb.write('/vanir-timezone', tzname)
+
+        self.untrusted_qdb.write('/vanir-block-devices', '')
+
+        self.untrusted_qdb.write('/vanir-usb-devices', '')
+
+        # TODO: Currently the whole qmemman is quite Xen-specific, so stay with
+        # xenstore for it until decided otherwise
+        if qmemman_present:
+            self.app.vmm.xs.set_permissions('',
+                '/local/domain/{}/memory'.format(self.xid),
+                [{'dom': self.xid}])
+
+        self.fire_event('domain-qdb-create')
+
+    # TODO async; update this in constructor
+    def _update_libvirt_domain(self):
+        '''Re-initialise :py:attr:`libvirt_domain`.'''
+        domain_config = self.create_config_file()
+        try:
+            self._libvirt_domain = self.app.vmm.libvirt_conn.defineXML(
+                domain_config)
+        except libvirt.libvirtError as e:
+            if e.get_error_code() == libvirt.VIR_ERR_OS_TYPE \
+                    and e.get_str2() == 'hvm':
+                raise vanir.exc.VanirVMError(self,
+                    'HVM vanir are not supported on this machine. '
+                    'Check BIOS settings for VT-x/AMD-V extensions.')
+            raise
+
+    #
+    # workshop -- those are to be reworked later
+    #
+
+    def get_prefmem(self):
+        # TODO: qmemman is still xen specific
+        untrusted_meminfo_key = self.app.vmm.xs.read('',
+            '/local/domain/{}/memory/meminfo'.format(self.xid))
+
+        if untrusted_meminfo_key is None or untrusted_meminfo_key == '':
+            return 0
+
+        domain = vanir.qmemman.DomainState(self.xid)
+        vanir.qmemman.algo.refresh_meminfo_for_domain(
+            domain, untrusted_meminfo_key)
+        if domain.mem_used is None:
+            # apparently invalid xenstore content
+            return 0
+        domain.memory_maximum = self.get_mem_static_max() * 1024
+
+        return vanir.qmemman.algo.prefmem(domain) / 1024
+
+
+def _clean_volume_config(config):
+    common_attributes = ['name', 'pool', 'size',
+                         'revisions_to_keep', 'rw', 'snap_on_start',
+                         'save_on_stop', 'source']
+    return {k: v for k, v in config.items() if k in common_attributes}
+
+
+def _patch_pool_config(config, pool=None, pools=None):
+    assert pool is not None or pools is not None
+    is_snapshot = config['snap_on_start']
+    is_rw = config['rw']
+
+    name = config['name']
+
+    if pool and not is_snapshot and is_rw:
+        config['pool'] = str(pool)
+    elif pool:
+        pass
+    elif pools and name in pools.keys():
+        if not is_snapshot:
+            config['pool'] = str(pools[name])
+        else:
+            msg = "Snapshot volume {0!s} must be in the same pool as its " \
+                  "origin ({0!s} volume of template)," \
+                  "cannot move to pool {1!s} " \
+                .format(name, pools[name])
+            raise vanir.exc.VanirException(msg)
+    return config
+
+def _patch_volume_config(volume_config, pool=None, pools=None):
+    assert not (pool and pools), \
+        'You can not pass pool & pools parameter at same time'
+    assert pool or pools
+
+    result = {}
+
+    for name, config in volume_config.items():
+        # copy only the subset of volume_config key/values
+        dst_config = _clean_volume_config(config)
+
+        if pool is not None or pools is not None:
+            dst_config = _patch_pool_config(dst_config, pool, pools)
+
+        result[name] = dst_config
+
+    return result
