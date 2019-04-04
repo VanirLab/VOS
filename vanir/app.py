@@ -1294,7 +1294,7 @@ class vanir(vanir.PropertyHolder):
                         self.log.error(
                             'Cannot remove %s, used by %s.%s',
                             vm, obj, prop.__name__)
-                        raise vanir.exc.QubesVMInUseError(vm, 'Domain is in '
+                        raise vanir.exc.VanirVMInUseError(vm, 'Domain is in '
                         'use: {!r}; see /var/log/vanir/vanir.log in dom0 for '
                         'details'.format(vm.name))
                 except AttributeError:
@@ -1338,7 +1338,7 @@ class vanir(vanir.PropertyHolder):
         if newvalue is not None and oldvalue is not None \
                 and oldvalue.is_running() and not newvalue.is_running() \
                 and self.domains.get_vms_connected_to(oldvalue):
-            raise vanir.exc.QubesVMNotRunningError(newvalue,
+            raise vanir.exc.VanirVMNotRunningError(newvalue,
                 'Cannot change {!r} to domain that '
                 'is not running ({!r}).'.format(name, newvalue.name))
 
