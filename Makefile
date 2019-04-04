@@ -291,7 +291,7 @@ msi:
 	# icons placeholder
 	mkdir -p destinstdir/icons
 	for i in blue gray green yellow orange black purple red; do touch destinstdir/icons/$$i.png; done
-	candle -arch x64 -dversion=$(VERSION) installer.wxs
+	candle -vanir x64 -dversion=$(VERSION) installer.wxs
 	light -b destinstdir -o core-admin.msm installer.wixobj
 	rm -rf destinstdir
 	
