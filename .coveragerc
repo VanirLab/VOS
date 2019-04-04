@@ -6,6 +6,6 @@ omit =
 	**/tests.py
         **/tests/*.py
 	env*
-        setup/settings.py
+        **/settings.py
         local_settings.py
 	/home/travis/virtualenv*
