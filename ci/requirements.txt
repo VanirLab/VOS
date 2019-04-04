@@ -11,3 +11,14 @@ sphinx
 Psycopg
 pydbus
 PyYAML
+IPy==0.83
+Markdown==2.6.11
+bencode.py==2.0.0
+django-countries==5.0
+jsmin==2.2.2
+pgpdump==1.5
+pytz>=2017.3
+parse==1.11.1
+django-jinja==2.4.1
+sqlparse==0.2.4
+django-csp==3.5
