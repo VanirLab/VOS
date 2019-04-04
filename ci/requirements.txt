@@ -9,7 +9,9 @@ lxml
 pylint
 sphinx
 Psycopg
-psycopg2-binary
+psycopg2==2.7.4
+pyinotify==0.9.6
+python-memcached==1.59
 pydbus
 PyYAML
 IPy==0.83
