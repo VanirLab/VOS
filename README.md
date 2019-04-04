@@ -1,4 +1,4 @@
-[![Build Status] (https://travis-ci.org/VanirLab/VOS.svg?branch=master)
+[![Build Status](https://travis-ci.org/VanirLab/VOS.svg?branch=master)
 
 # VOS
 ## Vanir Operative System
