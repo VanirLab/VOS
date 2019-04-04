@@ -180,7 +180,7 @@ class VMemmanReqHandler(socketserver.BaseRequestHandler):
                 self.log.debug('global_lock released')
 
 
-parser = vanir.tools.QubesArgumentParser(want_app=False)
+parser = vanir.tools.VanirArgumentParser(want_app=False)
 
 parser.add_argument('--config', '-c', metavar='FILE',
     action='store', default='/etc/vanir/qmemman.conf',
