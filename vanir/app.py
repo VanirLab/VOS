@@ -1126,7 +1126,7 @@ class vanir(vanir.PropertyHolder):
             else:
                 kwargs['template'] = self.default_template
             if kwargs['template'] is None:
-                raise vanir.exc.QubesValueError(
+                raise vanir.exc.VanirValueError(
                     'Template for the qube not specified, nor default '
                     'template set.')
         elif 'template' in kwargs and isinstance(kwargs['template'], str):
@@ -1189,11 +1189,11 @@ class vanir(vanir.PropertyHolder):
                 for volume in vm.volumes.values()
                     if volume.pool is pool]
             if volumes:
-                raise vanir.exc.QubesPoolInUseError(pool)
+                raise vanir.exc.VanirPoolInUseError(pool)
             prop_suffixes = ['', '_kernel', '_private', '_root', '_volatile']
             for suffix in prop_suffixes:
                 if getattr(self, 'default_pool' + suffix, None) is pool:
-                    raise vanir.exc.QubesPoolInUseError(pool,
+                    raise vanir.exc.VanirPoolInUseError(pool,
                         'Storage pool is in use: set as {}'.format(
                             'default_pool' + suffix))
             yield from self.fire_event_async('pool-pre-delete',
@@ -1241,7 +1241,7 @@ class vanir(vanir.PropertyHolder):
     def register_event_handlers(self):
         '''Register libvirt event handlers, which will translate libvirt
         events into vanir.events. This function should be called only in
-        'qubesd' process and only when mainloop has been already set.
+        'vanirsd' process and only when mainloop has been already set.
         '''
         self._domain_event_callback_id = (
             self.vmm.libvirt_conn.domainEventRegisterAny(
