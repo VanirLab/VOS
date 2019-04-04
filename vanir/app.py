@@ -540,7 +540,7 @@ def _default_pool(app):
     for pool in app.pools.values():
         if pool.config.get('driver', None) not in ('file', 'file-reflink'):
             continue
-        if pool.config['dir_path'] == vanir.config.qubes_base_dir:
+        if pool.config['dir_path'] == vanir.config.vanir_base_dir:
             return pool
     raise AttributeError('Cannot determine default storage pool')
 
@@ -737,10 +737,10 @@ class vanir(vanir.PropertyHolder):
         if store is not None:
             self._store = store
         else:
-            self._store = os.environ.get('QUBES_XML_PATH',
+            self._store = os.environ.get('VANIR_XML_PATH',
                 os.path.join(
-                    vanir.config.qubes_base_dir,
-                    vanir.config.system_path['qubes_store_filename']))
+                    vanir.config.vanir_base_dir,
+                    vanir.config.system_path['vanir_store_filename']))
 
         super(vanir, self).__init__(xml=None, **kwargs)
 
