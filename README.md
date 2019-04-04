@@ -22,7 +22,16 @@ an automate vulnerability and penetration testing.
 This is master branch of the VOS core.
 
 --------------------------------------
-## Vulnerability Reports
+## Coverage Reports
 
-N/A
+Running tests and coverage
+To the unittests execute the following commands:
+
+    ./manage.py collectstatic --noinput
+    ./manage.py test
+Running coverage:
+
+    pip install coverage
+    coverage run --omit='env*' --source='.' manage.py test
+    coverage report
 
