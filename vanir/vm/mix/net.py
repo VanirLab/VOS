@@ -46,7 +46,7 @@ def _setter_netvm(self, prop, value):
     if value is None:
         return None
     if not value.provides_network:
-        raise vanir.exc.QubesValueError(
+        raise vanir.exc.VanirValueError(
             'The {!s} qube does not provide network'.format(value))
 
     # skip check for netvm loops during vanir.xml loading, to avoid tricky
@@ -54,7 +54,7 @@ def _setter_netvm(self, prop, value):
     if self.events_enabled:
         if value is self \
                 or value in self.app.domains.get_vms_connected_to(self):
-            raise vanir.exc.QubesValueError(
+            raise vanir.exc.VanirValueError(
                 'Loops in network are unsupported')
     return value
 
@@ -62,7 +62,7 @@ def _setter_provides_network(self, prop, value):
     value = vanir.property.bool(self, prop, value)
     if not value:
         if list(self.connected_vms):
-            raise vanir.exc.QubesValueError(
+            raise vanir.exc.VanirValueError(
                 'The qube is still used by other vanir, change theirs '
                 '\'netvm\' first')
 
@@ -165,10 +165,10 @@ class NetVMMixin(vanir.events.Emitter):
         import vanir.vm.dispvm  # pylint: disable=redefined-outer-name
         if isinstance(vm, vanir.vm.dispvm.DispVM):
             return ipaddress.IPv6Address('{}::a8a:{:x}'.format(
-                vanir.config.qubes_ipv6_prefix, vm.dispid))
+                vanir.config.vanir_ipv6_prefix, vm.dispid))
 
         return ipaddress.IPv6Address('{}::a89:{:x}'.format(
-            vanir.config.qubes_ipv6_prefix, vm.qid))
+            vanir.config.vanir_ipv6_prefix, vm.qid))
 
     @vanir.stateless_property
     def gateway(self):
@@ -223,7 +223,7 @@ class NetVMMixin(vanir.events.Emitter):
     @vanir.events.handler('domain-load')
     def on_domain_load_netvm_loop_check(self, event):
         # pylint: disable=unused-argument
-        # make sure there are no netvm loops - which could cause qubesd
+        # make sure there are no netvm loops - which could cause vanirsd
         # looping infinitely
         if self is self.netvm:
             self.log.error(
@@ -279,7 +279,7 @@ class NetVMMixin(vanir.events.Emitter):
 
         connected_vms = [vm for vm in self.connected_vms if vm.is_running()]
         if connected_vms and not force:
-            raise vanir.exc.QubesVMError(self,
+            raise vanir.exc.VanirVMError(self,
                 'There are other VMs connected to this VM: {}'.format(
                     ', '.join(vm.name for vm in connected_vms)))
 
@@ -288,9 +288,9 @@ class NetVMMixin(vanir.events.Emitter):
         '''Attach network in this machine to it's netvm.'''
 
         if not self.is_running():
-            raise vanir.exc.QubesVMNotRunningError(self)
+            raise vanir.exc.VanirVMNotRunningError(self)
         if self.netvm is None:
-            raise vanir.exc.QubesVMError(self,
+            raise vanir.exc.VanirVMError(self,
                 'netvm should not be {}'.format(self.netvm))
 
         if not self.netvm.is_running():  # pylint: disable=no-member
@@ -307,9 +307,9 @@ class NetVMMixin(vanir.events.Emitter):
         '''Detach machine from it's netvm'''
 
         if not self.is_running():
-            raise vanir.exc.QubesVMNotRunningError(self)
+            raise vanir.exc.VanirVMNotRunningError(self)
         if self.netvm is None:
-            raise vanir.exc.QubesVMError(self,
+            raise vanir.exc.VanirVMError(self,
                 'netvm should not be {}'.format(self.netvm))
 
         self.libvirt_domain.detachDevice(
