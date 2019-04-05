@@ -10,8 +10,8 @@ import subprocess
 # don't import 'vanir.config' please, it takes 0.3s
 QREXEC_CLIENT = '/usr/lib/vanir/qrexec-client'
 POLICY_DIR = '/etc/vanir-rpc/policy'
-QUBESD_INTERNAL_SOCK = '/var/run/vanirsd.internal.sock'
-QUBESD_SOCK = '/var/run/vanirsd.sock'
+VANIRSD_INTERNAL_SOCK = '/var/run/vanirsd.internal.sock'
+VANIRSD_SOCK = '/var/run/vanirsd.sock'
 
 
 class AccessDenied(Exception):
