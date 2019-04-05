@@ -18,7 +18,7 @@ import vanir.utils
 STORAGE_ENTRY_POINT = 'vanir.storage'
 
 
-class StoragePoolException(vanir.exc.QubesException):
+class StoragePoolException(vanir.exc.VanirException):
     ''' A general storage exception '''
 
 
@@ -418,7 +418,7 @@ class Storage:
         if 'kernel' in self.vm.volumes:
             return self.vm.volumes['kernel'].kernels_dir
         return os.path.join(
-            vanir.config.qubes_base_dir,
+            vanir.config.vanir_base_dir,
             vanir.config.system_path['vanir_kernels_base_dir'],
             self.vm.kernel)
 
