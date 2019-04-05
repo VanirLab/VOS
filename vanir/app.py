@@ -37,7 +37,7 @@ else:
     raise RuntimeError("Vanir is working POSIX or Windows NT systems")
 
 # pylint: disable=wrong-import-position
-#import vanir
+import vanir
 import vanir.ext
 import vanir.utils
 import vanir.storage
