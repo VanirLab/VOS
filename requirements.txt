@@ -7,6 +7,7 @@ docutils
 jinja2
 lxml
 pylint
+meson
 sphinx
 psycopg2==2.8
 pyinotify==0.9.6
