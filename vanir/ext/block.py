@@ -106,9 +106,9 @@ class BlockDeviceExtension(Vanir.ext.Extension):
         :param ident: device identifier
         :returns BlockDevice'''
 
-        untrusted_qubes_device_attrs = vm.untrusted_qdb.list(
+        untrusted_vanir_device_attrs = vm.untrusted_qdb.list(
             '/Vanir-block-devices/{}/'.format(ident))
-        if not untrusted_qubes_device_attrs:
+        if not untrusted_vanir_device_attrs:
             return None
         return BlockDevice(vm, ident)
 

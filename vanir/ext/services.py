@@ -1,7 +1,7 @@
 import vanir.ext
 
 class ServicesExtension(vanir.ext.Extension):
-    '''This extension export features with 'service.' prefix to QubesDB in
+    '''This extension export features with 'service.' prefix to VanirDB in
     /vanir-service/ tree.
     '''
     # pylint: disable=no-self-use
@@ -23,7 +23,7 @@ class ServicesExtension(vanir.ext.Extension):
 
     @vanir.ext.handler('domain-feature-set:*')
     def on_domain_feature_set(self, vm, event, feature, value, oldvalue=None):
-        '''Update /vanir-service/ QubesDB tree in runtime'''
+        '''Update /vanir-service/ VanirDB tree in runtime'''
         # pylint: disable=unused-argument
 
         # TODO: remove this compatibility hack in Qubes 4.1
@@ -50,7 +50,7 @@ class ServicesExtension(vanir.ext.Extension):
 
     @vanir.ext.handler('domain-feature-delete:*')
     def on_domain_feature_delete(self, vm, event, feature):
-        '''Update /vanir-service/ QubesDB tree in runtime'''
+        '''Update /vanir-service/ VanirDB tree in runtime'''
         # pylint: disable=unused-argument
         if not vm.is_running():
             return
