@@ -13,8 +13,8 @@ DIST_DOM0 ?= fc18
 PYTHON ?= python3
 
 # That's VOS default commando line
-PHONY := _all
-_all:
+#PHONY := _all
+#_all:
 
 ADMIN_API_METHODS_SIMPLE = \
 	admin.vmclass.List \
