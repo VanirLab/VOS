@@ -97,11 +97,11 @@ class VanirPoolInUseError(VanirException):
             msg or 'Storage pool is in use: {!r}'.format(pool.name))
 
 
-class QubesValueError(VanirException, ValueError):
+class VanirValueError(VanirException, ValueError):
     '''Cannot set some value, because it is invalid, out of bounds, etc.'''
 
 
-class VanirPropertyValueError(QubesValueError):
+class VanirPropertyValueError(VanirValueError):
     '''Cannot set value of vanir.property, because user-supplied value is wrong.
     '''
     def __init__(self, holder, prop, value, msg=None):
