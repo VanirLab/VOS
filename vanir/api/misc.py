@@ -6,12 +6,12 @@ import vanir.api.admin
 import vanir.vm.dispvm
 
 
-class QubesMiscAPI(vanir.api.AbstractVanirAPI):
+class VanirMiscAPI(vanir.api.AbstractVanirAPI):
     SOCKNAME = '/var/run/vanirsd.misc.sock'
 
     @vanir.api.method('vanir.FeaturesRequest', no_payload=True)
     @asyncio.coroutine
-    def qubes_features_request(self):
+    def vanir_features_request(self):
         ''' vanir.FeaturesRequest handler
         VM (mostly templates) can request some features from dom0 for itself.
         Then dom0 (vanirsd extension) may respect this request or ignore it.
