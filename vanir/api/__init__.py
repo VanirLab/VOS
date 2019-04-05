@@ -21,7 +21,7 @@ class PermissionDenied(Exception):
 def method(name, *, no_payload=False, endpoints=None, **classifiers):
     '''Decorator factory for methods intended to appear in API.
     The decorated method can be called from public API using a child of
-    :py:class:`AbstractQubesMgmt` class. The method becomes "public", and can be
+    :py:class:`AbstractVanirMgmt` class. The method becomes "public", and can be
     called using remote management interface.
     :param str name: qrexec rpc method name
     :param bool no_payload: if :py:obj:`True`, will barf on non-empty payload; \
