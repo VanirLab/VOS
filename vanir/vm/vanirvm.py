@@ -142,7 +142,7 @@ def _default_kernelopts(self):
         kernels_dir = self.storage.kernels_dir
     else:
         kernels_dir = os.path.join(
-            vanir.config.system_path['qubes_kernels_base_dir'],
+            vanir.config.system_path['vanir_kernels_base_dir'],
             self.kernel)
     pci = bool(list(self.devices['pci'].persistent()))
     if pci:
@@ -596,7 +596,7 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
     def dir_path(self):
         '''Root directory for files related to this domain'''
         return os.path.join(
-            vanir.config.qubes_base_dir,
+            vanir.config.vanir_base_dir,
             self.dir_path_prefix,
             self.name)
 
@@ -763,8 +763,8 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
         if not newvalue:
             return
         dirname = os.path.join(
-            vanir.config.qubes_base_dir,
-            vanir.config.system_path['qubes_kernels_base_dir'],
+            vanir.config.vanir_base_dir,
+            vanir.config.system_path['vanir_kernels_base_dir'],
             newvalue)
         if not os.path.exists(dirname):
             raise vanir.exc.VanirPropertyValueError(self,
@@ -945,7 +945,7 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
                     start_guid=start_guid)
 
                 self.log.info('Setting Vanir DB info for the VM')
-                yield from self.start_qubesdb()
+                yield from self.start_vanirdb()
                 self.create_qdb_entries()
                 self.start_qdb_watch()
 
@@ -1202,7 +1202,7 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
             vanir.config.system_path['qrexec_client_path'],
             '-d', str(self.name),
             *(('-t', '-T') if filter_esc else ()),
-            '{}:QUBESRPC {} {}'.format(user, service, source),
+            '{}:VANIRRPC {} {}'.format(user, service, source),
             **kwargs))
 
     @asyncio.coroutine
@@ -1331,7 +1331,7 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
 
         if not got_memory:
             qmemman_client.close()
-            raise vanir.exc.QubesMemoryError(self)
+            raise vanir.exc.VanirMemoryError(self)
 
         return qmemman_client
 
@@ -1350,8 +1350,8 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
             # try to always have VM daemons running as normal user, otherwise
             # some files (like clipboard) may be created as root and cause
             # permission problems
-            qubes_group = grp.getgrnam('vanir')
-            command = ['runuser', '-u', qubes_group.gr_mem[0], '--'] + \
+            vanir_group = grp.getgrnam('vanir')
+            command = ['runuser', '-u', vanir_group.gr_mem[0], '--'] + \
                 list(command)
         p = yield from asyncio.create_subprocess_exec(*command, **kwargs)
         stdout, stderr = yield from p.communicate(input=input)
@@ -1393,7 +1393,7 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
                 'qrexec-daemon startup failed: ' + err.stderr.decode())
 
     @asyncio.coroutine
-    def start_qubesdb(self):
+    def start_vanirdb(self):
         '''Start VanirDB daemon.
         :raises OSError: when starting fails.
         '''
@@ -1404,7 +1404,7 @@ class VanirVM(vanir.vm.mix.net.NetVMMixin, vanir.vm.BaseVM):
         self.log.info('Starting Vanir DB')
         try:
             yield from self.start_daemon(
-                vanir.config.system_path['qubesdb_daemon_path'],
+                vanir.config.system_path['vanirdb_daemon_path'],
                 str(self.xid),
                 self.name)
         except subprocess.CalledProcessError:
