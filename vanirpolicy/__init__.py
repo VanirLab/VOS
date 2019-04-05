@@ -428,14 +428,14 @@ class PolicyAction(object):
                 'keyword' if is_special_value(self.original_target) else 'name'
             original_target = self.original_target.lstrip('@')
             cmd = \
-                'QUBESRPC {service} {source} {original_target_type} ' \
+                'VANIRRPC {service} {source} {original_target_type} ' \
                 '{original_target}'.format(
                     service=self.service,
                     source=self.source,
                     original_target_type=original_target_type,
                     original_target=original_target)
         else:
-            cmd = '{user}:QUBESRPC {service} {source}'.format(
+            cmd = '{user}:VANIRRPC {service} {source}'.format(
                 user=(self.rule.override_user or 'DEFAULT'),
                 service=self.service,
                 source=self.source)
@@ -466,9 +466,9 @@ class PolicyAction(object):
         :return: name of new Disposable VM
         '''
         base_appvm = self.target.split(':', 1)[1]
-        dispvm_name = qubesd_call(base_appvm, 'admin.vm.CreateDisposable')
+        dispvm_name = vanirsd_call(base_appvm, 'admin.vm.CreateDisposable')
         dispvm_name = dispvm_name.decode('ascii')
-        qubesd_call(dispvm_name, 'admin.vm.Start')
+        vanirsd_call(dispvm_name, 'admin.vm.Start')
         return dispvm_name
 
     def ensure_target_running(self):
@@ -479,7 +479,7 @@ class PolicyAction(object):
         if self.target == 'dom0':
             return
         try:
-            qubesd_call(self.target, 'admin.vm.Start')
+            vanirsd_call(self.target, 'admin.vm.Start')
         except VanirMgmtException as e:
             if e.exc_type == 'VanirVMNotHaltedError':
                 pass
@@ -493,7 +493,7 @@ class PolicyAction(object):
         :param dispvm: name of Disposable VM
         :return: None
         '''
-        qubesd_call(dispvm, 'admin.vm.Kill')
+        vanirsd_call(dispvm, 'admin.vm.Kill')
 
 
 class Policy(object):
@@ -665,17 +665,17 @@ class Policy(object):
 
 
 class VanirMgmtException(Exception):
-    ''' Exception returned by qubesd '''
+    ''' Exception returned by vanirsd '''
     def __init__(self, exc_type):
         super(VanirMgmtException, self).__init__()
         self.exc_type = exc_type
 
 
-def qubesd_call(dest, method, arg=None, payload=None):
+def vanirsd_call(dest, method, arg=None, payload=None):
     if method.startswith('internal.'):
-        socket_path = QUBESD_INTERNAL_SOCK
+        socket_path = VANIRSD_INTERNAL_SOCK
     else:
-        socket_path = QUBESD_SOCK
+        socket_path = VANIRSD_SOCK
     try:
         client_socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         client_socket.connect(socket_path)
@@ -702,7 +702,7 @@ def qubesd_call(dest, method, arg=None, payload=None):
         raise VanirMgmtException(exc_type.decode('ascii'))
     else:
         raise AssertionError(
-            'invalid qubesd response: {!r}'.format(return_data))
+            'invalid vanirsd response: {!r}'.format(return_data))
 
 
 def get_system_info():
@@ -717,5 +717,5 @@ def get_system_info():
           - default_dispvm: name of default AppVM for DispVMs started from here
     '''
 
-    system_info = qubesd_call('dom0', 'internal.GetSystemInfo')
+    system_info = vanirsd_call('dom0', 'internal.GetSystemInfo')
     return json.loads(system_info.decode('utf-8'))
