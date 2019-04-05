@@ -15,6 +15,8 @@ import uuid
 import asyncio
 import jinja2
 import libvirt
+import python3-libvirt
+import libvirt-python
 import lxml.etree
 
 try:
