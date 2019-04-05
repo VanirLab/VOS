@@ -481,7 +481,7 @@ class PolicyAction(object):
         try:
             qubesd_call(self.target, 'admin.vm.Start')
         except VanirMgmtException as e:
-            if e.exc_type == 'QubesVMNotHaltedError':
+            if e.exc_type == 'VanirVMNotHaltedError':
                 pass
             else:
                 raise
