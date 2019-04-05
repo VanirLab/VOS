@@ -7,8 +7,11 @@ docutils
 jinja2
 lxml
 pylint
+meson
 sphinx
-psycopg2-binary
+python3-lxml
+python3-libvirt
+libvirt-python
 psycopg2==2.8
 pyinotify==0.9.6
 python-memcached==1.59
