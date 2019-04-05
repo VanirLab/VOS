@@ -118,9 +118,9 @@ class BlockDeviceExtension(Vanir.ext.Extension):
 
         if not vm.is_running():
             return
-        untrusted_qubes_devices = vm.untrusted_qdb.list('/Vanir-block-devices/')
+        untrusted_vanir_devices = vm.untrusted_qdb.list('/Vanir-block-devices/')
         untrusted_idents = set(untrusted_path.split('/', 3)[2]
-            for untrusted_path in untrusted_qubes_devices)
+            for untrusted_path in untrusted_vanir_devices)
         for untrusted_ident in untrusted_idents:
             if not name_re.match(untrusted_ident):
                 msg = ("%s vm's device path name contains unsafe characters. "

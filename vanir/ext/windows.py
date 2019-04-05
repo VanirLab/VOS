@@ -5,7 +5,7 @@ import vanir.ext
 class WindowsFeatures(vanir.ext.Extension):
     # pylint: disable=too-few-public-methods
     @vanir.ext.handler('features-request')
-    def qubes_features_request(self, vm, event, untrusted_features):
+    def vanir_features_request(self, vm, event, untrusted_features):
         '''Handle features provided requested by vanir Windows Tools'''
         # pylint: disable=no-self-use,unused-argument
         if getattr(vm, 'template', None):
