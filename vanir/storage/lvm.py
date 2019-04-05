@@ -456,7 +456,7 @@ class ThinVolume(vanir.storage.Volume):
     def export(self):
         ''' Returns an object that can be `open()`. '''
         # make sure the device node is available
-        qubes_lvm(['activate', self.path], self.log)
+        vanir_lvm(['activate', self.path], self.log)
         devpath = self.path
         return devpath
 
@@ -472,7 +472,7 @@ class ThinVolume(vanir.storage.Volume):
                 ' start and stop a qube to cleanup'.format(self.vid))
         self.abort_if_import_in_progress()
         # HACK: neat trick to speed up testing if you have same physical thin
-        # pool assigned to two vanir-pools i.e: qubes_dom0 and test-lvm
+        # pool assigned to two vanir-pools i.e: vanir_dom0 and test-lvm
         # pylint: disable=line-too-long
         if isinstance(src_volume.pool, ThinPool) and \
                 src_volume.pool.thin_pool == self.pool.thin_pool:  # NOQA
@@ -756,7 +756,7 @@ def _process_lvm_output(returncode, stdout, stderr, log):
         raise vanir.storage.StoragePoolException(err)
     return True
 
-def qubes_lvm(cmd, log=logging.getLogger('vanir.storage.lvm')):
+def vanir_lvm(cmd, log=logging.getLogger('vanir.storage.lvm')):
     ''' Call :program:`lvm` to execute an LVM operation '''
     # the only caller for this non-coroutine version is ThinVolume.export()
     cmd = _get_lvm_cmdline(cmd)
@@ -770,7 +770,7 @@ def qubes_lvm(cmd, log=logging.getLogger('vanir.storage.lvm')):
 @asyncio.coroutine
 def vanir_lvm_coro(cmd, log=logging.getLogger('vanir.storage.lvm')):
     ''' Call :program:`lvm` to execute an LVM operation
-    Coroutine version of :py:func:`qubes_lvm`'''
+    Coroutine version of :py:func:`vanir_lvm`'''
     cmd = _get_lvm_cmdline(cmd)
     environ = os.environ.copy()
     environ['LC_ALL'] = 'C.utf8'
