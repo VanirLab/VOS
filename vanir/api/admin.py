@@ -59,7 +59,7 @@ class VanirMgmtEventsDispatcher:
         vm.remove_handler('*', self.vm_handler)
 
 
-class VanirAdminAPI(vanir.api.AbstractQubesAPI):
+class VanirAdminAPI(vanir.api.AbstractVanirAPI):
     '''Implementation of Vanir Management API calls
     This class contains all the methods available in the main API.
    

@@ -15,7 +15,7 @@ class VanirMiscAPI(vanir.api.AbstractVanirAPI):
         ''' vanir.FeaturesRequest handler
         VM (mostly templates) can request some features from dom0 for itself.
         Then dom0 (vanirsd extension) may respect this request or ignore it.
-        Technically, VM first write requested features into QubesDB in
+        Technically, VM first write requested features into VanirDB in
         `/features-request/` subtree, then call this method. The method will
         dispatch 'features-request' event, which may be handled by
         appropriate extensions. Requests not explicitly handled by some
