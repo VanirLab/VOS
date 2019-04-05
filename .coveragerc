@@ -1,5 +1,16 @@
 # .coveragerc to control coverage.py
-
+[report]
+exclude_lines =
+    pragma: no cover
+    ^\s*def __repr__
+    ^\s*(el)?if os\.name ==
+    ^\s*raise (RuntimeError|NotImplementedError)
+    ^\s*except ImportError
+[paths]
+source =
+    qubes
+    /usr/lib/python2.7/site-packages/vanir
+    /usr/lib64/python2.7/site-packages/vanir
 [run]
 omit =
 	**/migrations/*.py
