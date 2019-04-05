@@ -9,9 +9,6 @@ lxml
 pylint
 meson
 sphinx
-python3-lxml
-python3-libvirt
-libvirt-python
 psycopg2==2.8
 pyinotify==0.9.6
 python-memcached==1.59
