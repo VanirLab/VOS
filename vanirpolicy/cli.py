@@ -57,7 +57,7 @@ def main(args=None):
         args.service_name, args.domain, args.target)
     try:
         system_info = vanirpolicy.get_system_info()
-    except vanirpolicy.QubesMgmtException as e:
+    except vanirpolicy.VanirMgmtException as e:
         log.error('%s error getting system info: %s', log_prefix, str(e))
         return 1
     try:
