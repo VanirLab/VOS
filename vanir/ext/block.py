@@ -218,31 +218,31 @@ class BlockDeviceExtension(Vanir.ext.Extension):
         for option, value in options.items():
             if option == 'frontend-dev':
                 if not value.startswith('xvd') and not value.startswith('sd'):
-                    raise Vanir.exc.QubesValueError(
+                    raise Vanir.exc.VanirValueError(
                         'Invalid frontend-dev option value: ' + value)
             elif option == 'read-only':
                 options[option] = (
                     'yes' if Vanir.property.bool(None, None, value) else 'no')
             elif option == 'devtype':
                 if value not in ('disk', 'cdrom'):
-                    raise Vanir.exc.QubesValueError(
+                    raise Vanir.exc.VanirValueError(
                         'devtype option can only have '
                         '\'disk\' or \'cdrom\' value')
             else:
-                raise Vanir.exc.QubesValueError(
+                raise Vanir.exc.VanirValueError(
                     'Unsupported option {}'.format(option))
 
         if 'read-only' not in options:
             options['read-only'] = 'yes' if device.mode == 'r' else 'no'
         if options.get('read-only', 'no') == 'no' and device.mode == 'r':
-            raise Vanir.exc.QubesValueError(
+            raise Vanir.exc.VanirValueError(
                 'This device can be attached only read-only')
 
         if not vm.is_running():
             return
 
         if not device.backend_domain.is_running():
-            raise Vanir.exc.QubesVMNotRunningError(device.backend_domain,
+            raise Vanir.exc.VanirVMNotRunningError(device.backend_domain,
                 'Domain {} needs to be running to attach device from '
                 'it'.format(device.backend_domain.name))
 
