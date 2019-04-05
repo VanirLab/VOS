@@ -189,7 +189,7 @@ class DeviceCollection:
                 'Trying to attach DeviceAssignment of a different device class')
 
         if not device_assignment.persistent and self._vm.is_halted():
-            raise vanir.exc.QubesVMNotRunningError(self._vm,
+            raise vanir.exc.VanirVMNotRunningError(self._vm,
                 "VM not running, can only attach device with persistent flag")
         device = device_assignment.device
         if device in self.assignments():
@@ -248,7 +248,7 @@ class DeviceCollection:
                 "Trying to attach DeviceAssignment of a different device class"
 
         if device_assignment in self._set and not self._vm.is_halted():
-            raise vanir.exc.QubesVMNotHaltedError(self._vm,
+            raise vanir.exc.VanirVMNotHaltedError(self._vm,
                 "Can not remove a persistent attachment from a non halted vm")
         if device_assignment not in self.assignments():
             raise DeviceNotAttached(
