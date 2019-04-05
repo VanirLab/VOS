@@ -26,7 +26,7 @@ class ServicesExtension(vanir.ext.Extension):
         '''Update /vanir-service/ VanirDB tree in runtime'''
         # pylint: disable=unused-argument
 
-        # TODO: remove this compatibility hack in Qubes 4.1
+        # TODO: remove this compatibility hack in Vanir OS 1.0
         if feature == 'service.meminfo-writer':
             # if someone try to enable meminfo-writer ...
             if value:
