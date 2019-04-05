@@ -11,7 +11,7 @@ from vanir.vm.vanirvm import VanirVM
 class TemplateVM(VanirVM):
     '''Template for AppVM'''
 
-    dir_path_prefix = vanir.config.system_path['qubes_templates_dir']
+    dir_path_prefix = vanir.config.system_path['vanir_templates_dir']
 
     @property
     def rootcow_img(self):
