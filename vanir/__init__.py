@@ -87,7 +87,7 @@ class Label:
         .. deprecated:: 2.0
            use :py:meth:`PyQt4.QtGui.QIcon.fromTheme` and :py:attr:`icon`
         '''
-        return os.path.join(vanir.config.system_path['qubes_icon_dir'],
+        return os.path.join(vanir.config.system_path['vanir_icon_dir'],
             self.icon) + ".png"
 
 
@@ -97,7 +97,7 @@ class Label:
         .. deprecated:: 2.0
            use :py:meth:`PyQt4.QtGui.QIcon.fromTheme` and :py:attr:`icon_dispvm`
         '''
-        return os.path.join(vanir.config.system_path['qubes_icon_dir'],
+        return os.path.join(vanir.config.system_path['vanir_icon_dir'],
             self.icon_dispvm) + ".png"
 
 
