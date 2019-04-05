@@ -14,7 +14,7 @@ system_path = {
     'vanir_store_filename': 'vanir.xml',
     'vanir_kernels_base_dir': 'vm-kernels',
 
-    # qubes_icon_dir is obsolete
+    # vanir_icon_dir is obsolete
     # use QIcon.fromTheme() where applicable
     'vanir_icon_dir': '/usr/share/icons/hicolor/128x128/devices',
 
@@ -51,8 +51,8 @@ defaults = {
 
     'pool_configs': {
         # create file(-reflink) pool even when the default one is LVM
-        'varlibqubes': {'dir_path': vanir_base_dir,
-                    'name': 'varlibqubes'},
+        'varlibvanir': {'dir_path': vanir_base_dir,
+                    'name': 'varlibvanir'},
         'linux-kernel': {
             'dir_path': os.path.join(vanir_base_dir,
                                      system_path['vanir_kernels_base_dir']),
