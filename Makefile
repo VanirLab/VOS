@@ -206,11 +206,11 @@ endif
 	cp vanir-rpc/vanir.NotifyUpdates $(DESTDIR)/etc/vanir-rpc/
 	cp vanir-rpc/policy.RegisterArgument $(DESTDIR)/etc/vanir-rpc/
 	install vanir-rpc/qubesd-query-fast $(DESTDIR)/usr/libexec/vanir/
-	install -m 0755 qvm-tools/vanir-bug-report $(DESTDIR)/usr/bin/vanir-bug-report
-	install -m 0755 qvm-tools/vanir-hcl-report $(DESTDIR)/usr/bin/vanir-hcl-report
-	install -m 0755 qvm-tools/qvm-sync-clock $(DESTDIR)/usr/bin/qvm-sync-clock
+	install -m 0755 vvm-tools/vanir-bug-report $(DESTDIR)/usr/bin/vanir-bug-report
+	install -m 0755 vvm-tools/vanir-hcl-report $(DESTDIR)/usr/bin/vanir-hcl-report
+	install -m 0755 vvm-tools/vvm-sync-clock $(DESTDIR)/usr/bin/vvm-sync-clock
 	for method in $(ADMIN_API_METHODS_SIMPLE); do \
-		ln -s ../../usr/libexec/vanir/qubesd-query-fast \
+		ln -s ../../usr/libexec/vanir/vanirsd-query-fast \
 			$(DESTDIR)/etc/vanir-rpc/$$method || exit 1; \
 	done
 	install vanir-rpc/admin.vm.volume.Import $(DESTDIR)/etc/vanir-rpc/
