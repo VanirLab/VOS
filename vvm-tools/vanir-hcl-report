@@ -1,0 +1,279 @@
+VERSION=1.0
+COPY2VM="dom0"
+SUPPORT_FILES=0
+
+XL_DMESG_PREFIX_REGEX='^(XEN) \(\[[^]]*\] \)\?'
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+
+    -s |--support)
+      SUPPORT_FILES=1
+      ;;
+
+    -* | -h | --help)
+      echo -e "vanir-hcl-report v$VERSION"
+      echo ""
+      echo "This tool is used to gather basic hardware information for the Vanir HCL (Hardware Compatibility List)"
+      echo "and copy the results to the given AppVM for the easy contribution."
+      echo ""
+      echo -e "Usage:\tqubes-hcl-report [OPTIONS] [<AppVM Name>]"
+      echo -e "Options are:"
+      echo -e "\t-h, --help\tDisplay this help text and exit."
+      echo -e "\t-s, --support\tGenerate more detailed HCL Support Files"
+      echo -e "\t\t\tWARNING: The HCL Support Files may contain numerous hardware details, including serial numbers." 
+      echo -e "\t\t\tIf, for privacy or security reasons, you do not wish to make this information public, "
+      echo -e "\t\t\tplease do not send the .cpio.gz file to the public mailing list."
+      echo ""
+      echo -e "\t<AppVM Name>\tCopy the results to the given AppVM. The default is to keep it in dom0"
+      echo ""
+      exit
+      ;;
+
+    *)
+      /usr/bin/qvm-check -q $1
+      if [[ $? -eq 0 ]]
+        then
+          COPY2VM="$1"
+        else
+          echo -e "ERROR:\tAppVM with the name '$1' does not exist in the system!"
+          exit 1
+      fi
+      ;;
+
+  esac
+  shift
+done
+
+
+DATE=`date +%Y%m%d-%H%M%S`
+
+
+TEMP_DIR=`mktemp --tmpdir -d HCL.XXXXXXXXXX`
+cat /etc/vanir-release > $TEMP_DIR/vanir-release
+cat /proc/cpuinfo > $TEMP_DIR/cpuinfo
+lspci -nnvk > $TEMP_DIR/lspci
+cat /proc/scsi/scsi > $TEMP_DIR/scsi
+sudo dmidecode > $TEMP_DIR/dmidecode
+xl info > $TEMP_DIR/xl-info
+xl dmesg > $TEMP_DIR/xl-dmesg
+
+if cat $TEMP_DIR/xl-dmesg | grep "$XL_DMESG_PREFIX_REGEX"'Xen version ' > /dev/null; then
+    XL_DMESG_INCOMPLETE=no
+else
+    XL_DMESG_INCOMPLETE=yes
+    echo -e 'WARNING: "xl dmesg" is incomplete. Some information are missing. Please reboot and try again.\n'
+fi
+
+
+BRAND=`cat $TEMP_DIR/dmidecode |grep -A9 "System Information" |grep "Manufacturer:" |cut -d ' ' -f2-`
+PRODUCT=`cat $TEMP_DIR/dmidecode |grep -A9 "System Information" |grep "Product Name:" |cut -d ' ' -f3-`
+TYPE=`cat $TEMP_DIR/dmidecode |grep -A9 "Chassis Information" |grep Type |cut -d ' ' -f2- |tr '[:upper:]' '[:lower:]'`
+
+if [[ $BRAND =~ "O.E.M" ]]
+ then
+    BRAND=`cat $TEMP_DIR/dmidecode |grep -A9 "Base Board Information" |grep "Manufacturer:" |cut -d ' ' -f2-`
+    PRODUCT=`cat $TEMP_DIR/dmidecode |grep -A9 "Base Board Information" |grep "Product Name:" |cut -d ' ' -f3-`
+fi
+
+KERNEL=`uname -r |cut -d '.' -f-3`
+CPU=`cat $TEMP_DIR/cpuinfo |grep "model name" |sort -u |cut -d ' ' -f3- |sed -e "s/[[:space:]]*/\  /"`
+CHIPSET=`cat $TEMP_DIR/lspci |grep "00:00.0.*Host bridge" |cut -d ':' -f3- |sed -e "s/[[:space:]]*/\  /"`
+VGA=`cat $TEMP_DIR/lspci |grep "VGA\|Display" |cut -d ':' -f3- |sed -e "s/^[[:space:]]*/\  /"`
+NET=`cat $TEMP_DIR/lspci |lspci |grep "Network\|Ethernet" |cut -d ':' -f3- |sed -e "s/^[[:space:]]*/\  /"`
+SCSI=`cat $TEMP_DIR/scsi |grep Model |cut -d ':' -f3-|sed -e "s/^[[:space:]]*/\  /"`
+RAM=`cat $TEMP_DIR/xl-info |grep total_memory |cut -d ':' -f2 |tr -d ' '`
+USB=`lspci|grep USB|wc -l`
+BIOS=`cat $TEMP_DIR/dmidecode |grep -A9 "BIOS Information" |grep "Version" |cut -d ' ' -f2-`
+XEN_MAJOR=`cat $TEMP_DIR/xl-info |grep xen_major |cut -d: -f2 |tr -d ' '`
+XEN_MINOR=`cat $TEMP_DIR/xl-info |grep xen_minor |cut -d: -f2 |tr -d ' '`
+XEN_EXTRA=`cat $TEMP_DIR/xl-info |grep xen_extra |cut -d: -f2 |tr -d ' '`
+VANIR=`cat $TEMP_DIR/vanir-release |cut -d '(' -f2 |cut -d ')' -f1`
+XL_VTX=`cat $TEMP_DIR/xl-info |grep xen_caps | grep hvm`
+XL_VTD=`cat $TEMP_DIR/xl-info |grep virt_caps |grep hvm_directio`
+XL_HAP=`cat $TEMP_DIR/xl-dmesg |grep "$XL_DMESG_PREFIX_REGEX"'HVM: Hardware Assisted Paging (HAP) detected\( but disabled\)\?$'`
+PCRS=`find /sys/devices/ -name pcrs`
+XL_REMAP=`cat $TEMP_DIR/xl-dmesg |grep "$XL_DMESG_PREFIX_REGEX"'\(Intel VT-d Interrupt Remapping enabled\|Interrupt remapping enabled\)'`
+
+
+FILENAME="Vanir-HCL-${BRAND//[^[:alnum:]]/_}-${PRODUCT//[^[:alnum:]]/_}-$DATE"
+
+if [[ $XL_VTX ]]
+ then 
+    VTX="Active"
+    HVM="yes"
+
+ else
+    VTX="Not active"
+    HVM="no"
+
+fi
+
+if [[ $XL_VTD ]]
+ then
+    VTD="Active"
+    IOMMU="yes"
+
+ else
+    VTD="Not active"
+    IOMMU="no"
+
+fi
+
+if [ $XL_DMESG_INCOMPLETE = yes ]; then
+    HAP=""
+    HAP_VERBOSE='Unknown ("xl dmesg" incomplete)'
+elif [ -n "$XL_HAP" ]; then
+    HAP="yes"
+    HAP_VERBOSE="Yes"
+    if [[ "$XL_HAP" =~ "disabled" ]]; then
+        HAP_VERBOSE="Yes (disabled)"
+    fi
+else
+    HAP="no"
+    HAP_VERBOSE="No"
+fi
+
+if [[ $PCRS ]]
+  then
+    # try tu run tcsd and: grep the logs, try get version info.
+    TPM="Device present"
+  else
+    TPM="Device not found"
+    TPM_s="unknown"
+fi
+
+if [[ $XL_REMAP ]]
+ then
+    REMAP="yes"
+ else
+    REMAP="no"
+fi
+
+
+cat /etc/vanir-release
+echo
+echo -e "Brand:\t\t$BRAND"
+echo -e "Model:\t\t$PRODUCT"
+echo -e "BIOS:\t\t$BIOS\n"
+echo -e "Xen:\t\t$XEN_MAJOR.$XEN_MINOR$XEN_EXTRA"
+echo -e "Kernel:\t\t$KERNEL\n"
+echo -e "RAM:\t\t$RAM Mb\n"
+echo -e "CPU:\n$CPU"
+echo -e "Chipset:\n$CHIPSET"
+echo -e "VGA:\n${VGA}\n"
+echo -e "Net:\n$NET\n"
+echo -e "SCSI:\n$SCSI\n"
+echo -e "HVM:\t\t$VTX"
+echo -e "I/O MMU:\t$VTD"
+echo -e "HAP/SLAT:\t$HAP_VERBOSE"
+echo -e "TPM:\t\t$TPM"
+echo -e "Remapping:\t$REMAP"
+echo
+
+echo -e "---
+layout:
+  'hcl'
+type:
+  '$TYPE'
+hvm:
+  '$HVM'
+iommu:
+  '$IOMMU'
+slat:
+  '$HAP'
+tpm:
+  '$TPM_s'
+remap:
+  '$REMAP'
+brand: |
+  $BRAND
+model: |
+  $PRODUCT
+bios: |
+  $BIOS
+cpu: |
+$CPU
+cpu-short: |
+  FIXME
+chipset: |
+$CHIPSET
+chipset-short: |
+  FIXME
+gpu: |
+$VGA
+gpu-short: |
+  FIXME
+network: |
+$NET
+memory: |
+  $RAM
+scsi: |
+$SCSI
+usb: |
+  $USB
+versions:
+
+- works:
+    'FIXME:yes|no|partial'
+  vanir: |
+    $VANIR
+  xen: |
+    $XEN_MAJOR.$XEN_MINOR$XEN_EXTRA
+  kernel: |
+    $KERNEL
+  remark: |
+    FIXME
+  credit: |
+    FIXAUTHOR
+  link: |
+    FIXLINK
+
+---
+" >> "$HOME/$FILENAME.yml"
+
+
+if [[ "$SUPPORT_FILES" == 1 ]]
+  then
+
+    # cpio
+    cd $TEMP_DIR
+    find -print0 | cpio --quiet -o -H crc --null | gzip  > "$HOME/$FILENAME.cpio.gz"
+    cd
+fi
+
+# Destination VM check
+if [[ "$COPY2VM" != "dom0" ]]
+ then
+    # Copy to VM
+    qvm-start -q $COPY2VM 2> /dev/null
+
+    if [[ -f "$HOME/$FILENAME.cpio.gz" ]]
+      then
+        cat "$HOME/$FILENAME.cpio.gz" | qvm-run -a -q --pass-io -- "$COPY2VM" "cat > \"/home/user/$FILENAME.cpio.gz\""
+    fi
+
+    if [[ -f "$HOME/$FILENAME.yml" ]]
+      then
+        cat "$HOME/$FILENAME.yml" | qvm-run -a -q --pass-io -- "$COPY2VM" "cat > \"/home/user/$FILENAME.yml\""
+    fi
+
+fi
+
+echo -e "Vanir HCL Files are copied to: '$COPY2VM'"
+echo -e "\t$FILENAME.yml\t\t- HCL Info"
+
+if [[ "$SUPPORT_FILES" == 1 ]]
+  then
+    echo -e "\t$FILENAME.cpio.gz\t- HCL Support Files"
+fi
+
+echo
+
+
+# cleanup
+if [[ -d $TEMP_DIR ]]
+ then
+   rm -rf $TEMP_DIR
+fi
+
