@@ -1,0 +1,19 @@
+/var/log/vanir/qmemman.log {
+    create 0640 root vanir
+    su root vanir
+    postrotate
+        /bin/systemctl restart vanir-qmemman.service >/dev/null 2>/dev/null || true
+    endscript
+}
+
+/var/log/vanir/vanir.log {
+    create 0640 root vanir
+    su root vanir
+    postrotate
+        /bin/systemctl restart vanirsd.service >/dev/null 2>/dev/null || true
+    endscript
+}
+
+/var/log/vanir/vm-*.log {
+    su root vanir
+}

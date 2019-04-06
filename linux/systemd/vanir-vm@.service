@@ -1,0 +1,15 @@
+[Unit]
+Description=Start Vanir VM %i
+Before=systemd-user-sessions.service
+After=vanirsd.service vanir-meminfo-writer-dom0.service
+ConditionKernelCommandLine=!vanir.skip_autostart
+
+[Service]
+Type=oneshot
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/qvm-start --skip-if-running %i
+Group=vanir
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,21 @@
+[Unit]
+Description=Vanir Dom0 startup setup
+After=vanir-db-dom0.service libvirtd.service xenconsoled.service qubesd.service vanir-qmemman.service
+# Cover legacy init.d script
+
+[Service]
+Type=oneshot
+StandardOutput=syslog
+RemainAfterExit=yes
+# Needed to avoid rebooting before all VMs have shut down.
+TimeoutStopSec=180
+ExecStart=/usr/lib/vanir/startup-misc.sh
+ExecStop=/usr/bin/qvm-shutdown -q --all --wait
+# VanirDB daemons stop after 60s timeout in worst case; speed it up, since no
+# VMs are running now
+ExecStop=-/usr/bin/killall vanirdb-daemon
+
+[Install]
+WantedBy=multi-user.target
+Also=vanir-meminfo-writer-dom0.service vanir-qmemman.service
+Alias=vanir_core.service

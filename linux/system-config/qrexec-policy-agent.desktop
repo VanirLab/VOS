@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Vanir Qrexec Policy agent
+Comment=Agent for handling policy confirmation prompts
+Icon=vanir
+Exec=qrexec-policy-agent
+Terminal=false
+Type=Application

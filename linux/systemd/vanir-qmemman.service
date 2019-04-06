@@ -1,0 +1,10 @@
+[Unit]
+Description=Vanir memory management daemon
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/qmemmand
+StandardOutput=syslog
+
+[Install]
+WantedBy=multi-user.target
