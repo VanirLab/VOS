@@ -260,15 +260,15 @@ enable=import-self,
 # it should appear only once).
 
 # abstract-class-little-used: see http://www.logilab.org/ticket/111138
-disable=
-  locally-disabled,
-  locally-enabled,
-  file-ignored,
-  duplicate-code,
-  star-args,
-  cyclic-import,
-  abstract-class-little-used,
-  bad-continuation
+#disable=
+#  locally-disabled,
+#  locally-enabled,
+#  file-ignored,
+#  duplicate-code,
+#  star-args,
+#  cyclic-import,
+#  abstract-class-little-used,
+#  bad-continuation
 
 #
 # OTHER NICE SETS
