@@ -27,7 +27,7 @@ class SaltTestMixin(object):
         super().tearDown()
 
     def salt_call(self, cmd):
-        full_cmd = ['qubesctl']
+        full_cmd = ['vanirctl']
         if '--dom0-only' in cmd:
             full_cmd.insert(1, '--dom0-only')
             cmd.remove('--dom0-only')
@@ -221,7 +221,7 @@ class TC_00_Dom0(SaltTestMixin, vanir.tests.SystemTestCase):
         vm = self.app.domains[vmname]
         self.assertEqual(set(vm.tags), {'tag1', 'tag2'})
 
-    def test_020_qubes_pillar(self):
+    def test_020_vanir_pillar(self):
         vmname = self.make_vm_name('appvm')
 
         vm = self.app.add_new_vm('AppVM', label='red',
@@ -274,7 +274,7 @@ class SaltVMTestMixin(SaltTestMixin):
             f.write('  {}:\n'.format(vmname))
             f.write('    - test_salt.something\n')
 
-        # enable so state.show_top will not be empty, otherwise qubesctl will
+        # enable so state.show_top will not be empty, otherwise vanirctl will
         #  skip the VM; but we don't use state.highstate
         self.dom0_salt_call_json(['top.enable', 'test_salt.something'])
         state_output = self.salt_call(

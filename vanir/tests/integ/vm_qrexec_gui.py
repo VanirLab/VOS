@@ -114,7 +114,7 @@ class TC_00_AppVMMixin(object):
 
     @unittest.skipUnless(spawn.find_executable('xdotool'),
                          "xdotool not installed")
-    def test_012_qubes_desktop_run(self):
+    def test_012_vanir_desktop_run(self):
         self.loop.run_until_complete(self.testvm1.start())
         self.assertEqual(self.testvm1.get_power_state(), "Running")
         xterm_desktop_path = "/usr/share/applications/xterm.desktop"

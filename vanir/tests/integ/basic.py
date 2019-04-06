@@ -19,7 +19,7 @@ import vanir.firewall
 import vanir.tests
 import vanir.storage
 import vanir.vm.appvm
-import vanir.vm.qubesvm
+import vanir.vm.vanirvm
 import vanir.vm.standalonevm
 import vanir.vm.templatevm
 
@@ -31,8 +31,8 @@ class TC_00_Basic(vanir.tests.SystemTestCase):
         super(TC_00_Basic, self).setUp()
         self.init_default_template()
 
-    def test_000_qubes_create(self):
-        self.assertIsInstance(self.app, vanir.Qubes)
+    def test_000_vanir_create(self):
+        self.assertIsInstance(self.app, vanir.Vanir)
 
     def test_100_qvm_create(self):
         vmname = self.make_vm_name('appvm')

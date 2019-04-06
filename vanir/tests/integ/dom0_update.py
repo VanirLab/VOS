@@ -32,7 +32,7 @@ class TC_00_Dom0UpgradeMixin(object):
 Key-Type: RSA
 Key-Length: 1024
 Key-Usage: sign
-Name-Real: Qubes test
+Name-Real: Vanir test
 Expire-Date: 0
 %commit
         '''.format(keydir=keydir).encode())
@@ -143,7 +143,7 @@ Test package
         subprocess.check_call(['chmod', 'go-rw', '/dev/tty'])
         subprocess.check_call(
             ['rpm', '--quiet', '--define=_gpg_path {}'.format(dir),
-             '--define=_gpg_name {}'.format("Qubes test"),
+             '--define=_gpg_name {}'.format("Vanir test"),
              '--addsign', pkg_path],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

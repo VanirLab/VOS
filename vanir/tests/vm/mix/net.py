@@ -15,15 +15,15 @@ class TC_00_NetVMMixin(
         self.app.vmm.offline_mode = True
 
     def setup_netvms(self, vm):
-        # usage of QubesVM here means that those tests should be after
+        # usage of VanirVM here means that those tests should be after
         # testing properties used here
-        self.netvm1 = vanir.vm.vanirvm.QubesVM(self.app, None, qid=2,
+        self.netvm1 = vanir.vm.vanirvm.VanirVM(self.app, None, qid=2,
             name=vanir.tests.VMPREFIX + 'netvm1',
             provides_network=True, netvm=None)
-        self.netvm2 = vanir.vm.vanirvm.QubesVM(self.app, None, qid=3,
+        self.netvm2 = vanir.vm.vanirvm.VanirVM(self.app, None, qid=3,
             name=vanir.tests.VMPREFIX + 'netvm2',
             provides_network=True, netvm=None)
-        self.nonetvm = vanir.vm.vanirvm.QubesVM(self.app, None, qid=4,
+        self.nonetvm = vanir.vm.vanirvm.VanirVM(self.app, None, qid=4,
             name=vanir.tests.VMPREFIX + 'nonet')
         self.app.domains = vanir.app.VMCollection(self.app)
         for domain in (vm, self.netvm1, self.netvm2, self.nonetvm):

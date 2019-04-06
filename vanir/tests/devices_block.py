@@ -69,7 +69,7 @@ domain_xml_template = '''
 '''
 
 
-class TestQubesDB(object):
+class TestVanirDB(object):
     def __init__(self, data):
         self._data = data
 
@@ -96,7 +96,7 @@ class TestApp(object):
 class TestVM(object):
     def __init__(self, qdb, domain_xml=None, running=True, name='test-vm'):
         self.name = name
-        self.untrusted_qdb = TestQubesDB(qdb)
+        self.untrusted_qdb = TestVanirDB(qdb)
         self.libvirt_domain = mock.Mock()
         self.is_running = lambda: running
         self.log = mock.Mock()

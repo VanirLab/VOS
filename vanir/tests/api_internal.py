@@ -47,7 +47,7 @@ class TC_00_API_Misc(vanir.tests.VanirTestCase):
         return vm
 
     def call_mgmt_func(self, method, arg=b'', payload=b''):
-        mgmt_obj = vanir.api.internal.QubesInternalAPI(self.app,
+        mgmt_obj = vanir.api.internal.VanirInternalAPI(self.app,
             b'dom0', method, b'dom0', arg)
 
         loop = asyncio.get_event_loop()

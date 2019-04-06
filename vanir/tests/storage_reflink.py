@@ -63,12 +63,12 @@ class ReflinkMixin:
         for dev in (dev_from_real, dev_from_sym):
             self.assertEqual(get_blockdev_size(dev), size_resized)
 
-class TC_00_ReflinkOnBtrfs(ReflinkMixin, vanir.tests.QubesTestCase):
+class TC_00_ReflinkOnBtrfs(ReflinkMixin, vanir.tests.VanirTestCase):
     def setUp(self):  # pylint: disable=arguments-differ
         super().setUp('btrfs')
         self.ficlone_supported = True
 
-class TC_01_ReflinkOnExt4(ReflinkMixin, vanir.tests.QubesTestCase):
+class TC_01_ReflinkOnExt4(ReflinkMixin, vanir.tests.VanirTestCase):
     def setUp(self):  # pylint: disable=arguments-differ
         super().setUp('ext4')
         self.ficlone_supported = False

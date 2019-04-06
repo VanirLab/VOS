@@ -21,7 +21,7 @@ volume_properties = [
     'save_on_stop', 'snap_on_start', 'revisions_to_keep']
 
 
-class AdminAPITestCase(vanir.tests.QubesTestCase):
+class AdminAPITestCase(vanir.tests.VanirTestCase):
     def setUp(self):
         super().setUp()
         self.test_base_dir = '/tmp/vanir-test-dir'

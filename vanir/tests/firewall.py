@@ -511,11 +511,11 @@ class TC_10_Firewall(vanir.tests.VanirTestCase):
             [vanir.firewall.Rule(None, action='accept')] + rules)
 
     def test_003_load_v1(self):
-        xml_txt = """<QubesFirewallRules dns="allow" icmp="allow"
+        xml_txt = """<VanirFirewallRules dns="allow" icmp="allow"
         policy="deny" yumProxy="allow">
             <rule address="192.168.0.0" proto="tcp" netmask="24" port="80"/>
             <rule address="vanir-os.org" proto="tcp" port="443"/>
-        </QubesFirewallRules>
+        </VanirFirewallRules>
         """
         with open(os.path.join('/tmp', self.vm.firewall_conf), 'w') as f:
             f.write(xml_txt)

@@ -44,14 +44,14 @@ class TC_20_VanirHost(vanir.tests.VanirTestCase):
         super(TC_20_VanirHost, self).setUp()
         self.app = TestApp()
         self.app.vmm = mock.Mock()
-        self.qubes_host = vanir.app.QubesHost(self.app)
+        self.vanir_host  = vanir.app.VanirHost(self.app)
 
     def test_000_get_vm_stats_single(self):
         self.app.vmm.configure_mock(**{
             'xc.domain_getinfo.return_value': self.sample_xc_domain_getinfo
         })
 
-        info_time, info = self.qubes_host.get_vm_stats()
+        info_time, info = self.vanir_host .get_vm_stats()
         self.assertEqual(self.app.vmm.mock_calls, [
             ('xc.domain_getinfo', (0, 1024), {}),
         ])
@@ -80,12 +80,12 @@ class TC_20_VanirHost(vanir.tests.VanirTestCase):
             'xc.domain_getinfo.return_value': self.sample_xc_domain_getinfo
         })
 
-        prev_time, prev_info = self.qubes_host.get_vm_stats()
+        prev_time, prev_info = self.vanir_host .get_vm_stats()
         prev_time -= 1
         prev_info[0]['cpu_time'] -= 10**8
         prev_info[1]['cpu_time'] -= 10**9
         prev_info[11]['cpu_time'] -= 125 * 10**6
-        info_time, info = self.qubes_host.get_vm_stats(prev_time, prev_info)
+        info_time, info = self.vanir_host .get_vm_stats(prev_time, prev_info)
         self.assertIsNotNone(info_time)
         expected_info = {
             0: {
@@ -119,7 +119,7 @@ class TC_20_VanirHost(vanir.tests.VanirTestCase):
         vm.xid = 1
         vm.name = 'somevm'
 
-        info_time, info = self.qubes_host.get_vm_stats(only_vm=vm)
+        info_time, info = self.vanir_host .get_vm_stats(only_vm=vm)
         self.assertIsNotNone(info_time)
         self.assertEqual(self.app.vmm.mock_calls, [
             ('xc.domain_getinfo', (1, 1), {}),

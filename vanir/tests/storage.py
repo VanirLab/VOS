@@ -64,7 +64,7 @@ class TestDisposableVM(TestVM):
     def is_disposablevm(self):
         return True
 
-class TestApp(vanir.Qubes):
+class TestApp(vanir.Vanir):
     def __init__(self, *args, **kwargs):  # pylint: disable=unused-argument
         super(TestApp, self).__init__('/tmp/vanir-test.xml',
             load=False, offline_mode=True, **kwargs)

@@ -165,16 +165,16 @@ class TC_00_DeviceCollection(vanir.tests.VanirTestCase):
         self.loop.run_until_complete(self.collection.attach(self.assignment))
         self.assertEqual({self.device}, set(self.collection.persistent()))
         self.assertEqual(set(), set(self.collection.attached()))
-        with self.assertRaises(vanir.exc.QubesVMNotStartedError):
+        with self.assertRaises(vanir.exc.VanirVMNotStartedError):
             self.collection.update_persistent(self.device, False)
 
     def test_023_update_persistent_reject_not_attached(self):
         self.assertEqual(set(), set(self.collection.persistent()))
         self.assertEqual(set(), set(self.collection.attached()))
         self.emitter.running = True
-        with self.assertRaises(vanir.exc.QubesValueError):
+        with self.assertRaises(vanir.exc.VanirValueError):
             self.collection.update_persistent(self.device, True)
-        with self.assertRaises(vanir.exc.QubesValueError):
+        with self.assertRaises(vanir.exc.VanirValueError):
             self.collection.update_persistent(self.device, False)
 
 

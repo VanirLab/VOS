@@ -309,7 +309,7 @@ class substitute_entry_points(object):
 
 
 class VanirTestCase(unittest.TestCase):
-    '''Base class for Qubes unit tests.
+    '''Base class for Vanir unit tests.
     '''
 
     def __init__(self, *args, **kwargs):
@@ -343,7 +343,7 @@ class VanirTestCase(unittest.TestCase):
 
     def cleanup_traceback(self):
         '''Remove local variables reference from tracebacks to allow garbage
-        collector to clean all Qubes*() objects, otherwise file descriptors
+        collector to clean all Vanir*() objects, otherwise file descriptors
         held by them will leak'''
         exc_infos = [e for test_case, e in self._outcome.errors
             if test_case is self]
@@ -363,7 +363,7 @@ class VanirTestCase(unittest.TestCase):
         gc.collect()
         leaked = [obj for obj in gc.get_objects() + gc.garbage
             if isinstance(obj,
-                (vanir.Qubes, vanir.vm.BaseVM,
+                (vanir.Vanir, vanir.vm.BaseVM,
                 libvirt.virConnect, libvirt.virDomain))]
 
         if leaked:
@@ -602,7 +602,7 @@ class SystemTestCase(VanirTestCase):
     VM. If test need to make some modification, it must clone the VM first.
     If some group of tests needs class-wide initialization, first of all the
     author should consider if it is really needed. But if so, setUpClass can
-    be used to create Qubes(CLASS_XMLPATH) object and create/import required
+    be used to create Vanir(CLASS_XMLPATH) object and create/import required
     stuff there. VMs created in :py:meth:`TestCase.setUpClass` should
     use self.make_vm_name('...', class_teardown=True) for name creation.
     Such (group of) test need to take care about
@@ -617,14 +617,14 @@ class SystemTestCase(VanirTestCase):
 
         # need some information from the real vanir.xml - at least installed
         # templates; should not be used for testing, only to initialize self.app
-        self.host_app = vanir.Qubes(os.path.join(
+        self.host_app = vanir.Vanir(os.path.join(
             vanir.config.qubes_base_dir,
             vanir.config.system_path['vanir_store_filename']))
         if os.path.exists(CLASS_XMLPATH):
             shutil.copy(CLASS_XMLPATH, XMLPATH)
         else:
             shutil.copy(self.host_app.store, XMLPATH)
-        self.app = vanir.Qubes(XMLPATH)
+        self.app = vanir.Vanir(XMLPATH)
         os.environ['QUBES_XML_PATH'] = XMLPATH
         self.app.register_event_handlers()
 
@@ -659,7 +659,7 @@ class SystemTestCase(VanirTestCase):
         del server
 
         # close all existing connections, especially this will interrupt
-        # running admin.Events calls, which do keep reference to Qubes() and
+        # running admin.Events calls, which do keep reference to Vanir() and
         # libvirt connection
         conn = None
         for conn in vanir.api.VanirDaemonProtocol.connections:
@@ -865,17 +865,17 @@ class SystemTestCase(VanirTestCase):
         else:
             prefixes = prefix
         del prefix
-        # first, remove them Qubes-way
+        # first, remove them Vanir-way
         if os.path.exists(xmlpath):
             try:
                 try:
                     app = self.app
                 except AttributeError:
-                    app = vanir.Qubes(xmlpath)
+                    app = vanir.Vanir(xmlpath)
                 try:
                     host_app = self.host_app
                 except AttributeError:
-                    host_app = vanir.Qubes()
+                    host_app = vanir.Vanir()
                 self.remove_vms([vm for vm in app.domains
                     if any(vm.name.startswith(prefix) for prefix in prefixes) or
                        (isinstance(vm, vanir.vm.dispvm.DispVM) and vm.name
@@ -1168,7 +1168,7 @@ def list_templates():
             _templates = os.environ['VANIR_TEST_TEMPLATES'].split()
     if _templates is None:
         try:
-            app = vanir.Qubes()
+            app = vanir.Vanir()
             _templates = tuple(vm.name for vm in app.domains
                 if isinstance(vm, vanir.vm.templatevm.TemplateVM) and
                     vm.features.get('os', None) != 'Windows')

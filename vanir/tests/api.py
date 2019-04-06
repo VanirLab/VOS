@@ -72,7 +72,7 @@ class TestMgmt(object):
         except asyncio.CancelledError:
             pass
 
-class TC_00_VanirDaemonProtocol(vanir.tests.QubesTestCase):
+class TC_00_VanirDaemonProtocol(vanir.tests.VanirTestCase):
     def setUp(self):
         super(TC_00_VanirDaemonProtocol, self).setUp()
         self.app = unittest.mock.Mock()
@@ -121,7 +121,7 @@ class TC_00_VanirDaemonProtocol(vanir.tests.QubesTestCase):
                 asyncio.wait_for(self.reader.read(), 1))
         self.assertEqual(response, b"0\0")
 
-    def test_003_exception_qubes(self):
+    def test_003_exception_vanir(self):
         self.writer.write(b'dom0\0mgmt.vanirexception\0dom0\0arg\0payload')
         self.writer.write_eof()
         with self.assertNotRaises(asyncio.TimeoutError):

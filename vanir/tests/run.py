@@ -211,7 +211,7 @@ class VanirTestResult(unittest.TestResult):
 
 
 def demo(verbosity=2):
-    class TC_00_Demo(vanir.tests.QubesTestCase):
+    class TC_00_Demo(vanir.tests.VanirTestCase):
         '''Demo class'''
         # pylint: disable=no-self-use
         def test_0_success(self):
@@ -383,7 +383,7 @@ def main(args=None):
             logging.root.addHandler(ha_kmsg)
 
     if not args.allow_running_along_qubesd \
-    and os.path.exists(vanir.api.admin.QubesAdminAPI.SOCKNAME):
+    and os.path.exists(vanir.api.admin.VanirAdminAPI.SOCKNAME):
         parser.error('refusing to run until qubesd is disabled')
 
     runner = unittest.TextTestRunner(stream=sys.stdout,

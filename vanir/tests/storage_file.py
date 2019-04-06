@@ -365,9 +365,9 @@ class TC_03_FilePool(vanir.tests.VanirTestCase):
         super(TC_03_FilePool, self).setUp()
         self.test_base_dir = '/tmp/vanir-test-dir'
         self.base_dir_patch = unittest.mock.patch.dict(vanir.config.system_path,
-            {'qubes_base_dir': self.test_base_dir})
+            {'vanir_base_dir': self.test_base_dir})
         self.base_dir_patch2 = unittest.mock.patch(
-            'vanir.config.qubes_base_dir', self.test_base_dir)
+            'vanir.config.vanir_base_dir', self.test_base_dir)
         self.base_dir_patch3 = unittest.mock.patch.dict(
             vanir.config.defaults['pool_configs']['varlibqubes'],
             {'dir_path': self.test_base_dir})
