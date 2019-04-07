@@ -433,12 +433,12 @@ class TC_90_Vanir(vanir.tests.VanirTestCase):
         super(TC_90_Vanir, self).setUp()
         self.app = vanir.Vanir('/tmp/vanirtest.xml', load=False,
             offline_mode=True)
-        self.addCleanup(self.cleanup_qubes)
+        self.addCleanup(self.cleanup_vanir)
         self.app.load_initial_values()
         self.template = self.app.add_new_vm('TemplateVM', name='test-template',
             label='green')
 
-    def cleanup_qubes(self):
+    def cleanup_vanir(self):
         self.app.close()
         del self.app
         try:
