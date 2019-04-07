@@ -109,7 +109,7 @@ class TC_00_NetVMMixin(
         vm.netvm.features['ipv6'] = True
         self.assertPropertyDefaultValue(vm, 'ip6',
             ipaddress.IPv6Address('{}::a89:{:x}'.format(
-                vanir.config.qubes_ipv6_prefix, vm.qid)))
+                vanir.config.vanir_ipv6_prefix, vm.qid)))
         vm.ip6 = 'abcd:efff::1'
         self.assertEqual(vm.ip6, ipaddress.IPv6Address('abcd:efff::1'))
 
