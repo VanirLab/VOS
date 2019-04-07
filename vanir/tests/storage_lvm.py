@@ -91,7 +91,7 @@ class TC_00_ThinPool(ThinPoolBase):
             updatevm=None,
             offline_mode=True,
         )
-        os.environ['QUBES_XML_PATH'] = xml_path
+        os.environ['VANIR_XML_PATH'] = xml_path
         super(TC_00_ThinPool, self).setUp()
 
     def tearDown(self):
@@ -979,7 +979,7 @@ class TC_02_StorageHelpers(ThinPoolBase):
             updatevm=None,
             offline_mode=True,
         )
-        os.environ['QUBES_XML_PATH'] = xml_path
+        os.environ['VANIR_XML_PATH'] = xml_path
         super(TC_02_StorageHelpers, self).setUp()
         # reset cache
         vanir.storage.DirectoryThinPool._thin_pool = {}
