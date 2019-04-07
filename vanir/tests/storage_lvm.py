@@ -17,7 +17,7 @@ import asyncio
 import vanir.tests
 import vanir.tests.storage
 import vanir.storage
-from vanir.storage.lvm import ThinPool, ThinVolume, qubes_lvm
+from vanir.storage.lvm import ThinPool, ThinVolume, vanir_lvm
 
 if 'DEFAULT_LVM_POOL' in os.environ.keys():
     DEFAULT_LVM_POOL = os.environ['DEFAULT_LVM_POOL']
@@ -293,7 +293,7 @@ class TC_00_ThinPool(ThinPoolBase):
         for rev in revisions:
             cmd = ['create', self.pool._pool_id,
                    volume.vid.split('/')[1] + rev, str(config['size'])]
-            qubes_lvm(cmd)
+            vanir_lvm(cmd)
             orig_uuids[rev] = self._get_lv_uuid(volume.vid + rev)
         vanir.storage.lvm.reset_cache()
         path_snap = '/dev/' + volume._vid_snap
@@ -347,7 +347,7 @@ class TC_00_ThinPool(ThinPoolBase):
         for rev in revisions:
             cmd = ['create', self.pool._pool_id,
                    volume.vid.split('/')[1] + rev, str(config['size'])]
-            qubes_lvm(cmd)
+            vanir_lvm(cmd)
             orig_uuids[rev] = self._get_lv_uuid(volume.vid + rev)
         vanir.storage.lvm.reset_cache()
         path_snap = '/dev/' + volume._vid_snap
@@ -410,7 +410,7 @@ class TC_00_ThinPool(ThinPoolBase):
         for rev in revisions:
             cmd = ['create', self.pool._pool_id,
                    volume.vid.split('/')[1] + rev, str(config['size'])]
-            qubes_lvm(cmd)
+            vanir_lvm(cmd)
             orig_uuids[rev] = self._get_lv_uuid(volume.vid + rev)
         vanir.storage.lvm.reset_cache()
         path_snap = '/dev/' + volume._vid_snap
@@ -465,7 +465,7 @@ class TC_00_ThinPool(ThinPoolBase):
         for rev in revisions:
             cmd = ['create', self.pool._pool_id,
                    volume.vid.split('/')[1] + rev, str(config['size'])]
-            qubes_lvm(cmd)
+            vanir_lvm(cmd)
             orig_uuids[rev] = self._get_lv_uuid(volume.vid + rev)
         vanir.storage.lvm.reset_cache()
         path_snap = '/dev/' + volume._vid_snap
@@ -507,7 +507,7 @@ class TC_00_ThinPool(ThinPoolBase):
         for rev in revisions:
             cmd = ['create', self.pool._pool_id,
                    volume.vid.split('/')[1] + rev, str(config['size'])]
-            qubes_lvm(cmd)
+            vanir_lvm(cmd)
             orig_uuids[rev] = self._get_lv_uuid(volume.vid + rev)
         vanir.storage.lvm.reset_cache()
         path_snap = '/dev/' + volume._vid_snap
