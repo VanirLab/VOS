@@ -941,7 +941,7 @@ class TC_01_ThinPool(ThinPoolBase, vanir.tests.SystemTestCase):
                 expected = "/dev/{!s}/vm-{!s}-{!s}".format(
                     DEFAULT_LVM_POOL.split('/')[0], vm.name, v_name)
                 self.assertEqual(volume.path, expected)
-        with self.assertNotRaises(vanir.exc.QubesException):
+        with self.assertNotRaises(vanir.exc.VanirException):
             self.loop.run_until_complete(vm.start())
 
     def test_005_create_appvm(self):
@@ -953,7 +953,7 @@ class TC_01_ThinPool(ThinPoolBase, vanir.tests.SystemTestCase):
                 expected = "/dev/{!s}/vm-{!s}-{!s}".format(
                     DEFAULT_LVM_POOL.split('/')[0], vm.name, v_name)
                 self.assertEqual(volume.path, expected)
-        with self.assertNotRaises(vanir.exc.QubesException):
+        with self.assertNotRaises(vanir.exc.VanirException):
             self.loop.run_until_complete(vm.start())
 
     def test_006_name_suffix_parse(self):
