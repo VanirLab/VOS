@@ -1,0 +1,10 @@
+platform:
+  - x86
+  - Any CPU
+
+configuration:
+  - Debug
+  - Release
+
+matrix:
+  fast_finish: true
