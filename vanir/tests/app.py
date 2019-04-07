@@ -243,7 +243,7 @@ class TC_30_VMCollection(vanir.tests.VanirTestCase):
 #       pass
 
 
-class TC_80_QubesInitialPools(vanir.tests.VanirTestCase):
+class TC_80_VanirInitialPools(vanir.tests.VanirTestCase):
     def setUp(self):
         super().setUp()
         self.app = vanir.Vanir('/tmp/vanirtest.xml', load=False,
@@ -281,7 +281,7 @@ class TC_80_QubesInitialPools(vanir.tests.VanirTestCase):
         self.assertEqual(self.get_driver('ext4', False), 'file')
 
 
-class TC_89_QubesEmpty(vanir.tests.VanirTestCase):
+class TC_89_VanirEmpty(vanir.tests.VanirTestCase):
     def tearDown(self):
         try:
             os.unlink('/tmp/vanirtest.xml')
