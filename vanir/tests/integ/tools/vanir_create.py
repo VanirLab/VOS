@@ -7,11 +7,11 @@ import vanir.tests
 class TC_00_vanir_create(vanir.tests.SystemTestCase):
     def test_000_basic(self):
         self.assertEqual(0, vanir.tools.vanir_create.main([
-            '--qubesxml', vanir.tests.XMLPATH]))
+            '--vanirxml', vanir.tests.XMLPATH]))
 
     def test_001_property(self):
         self.assertEqual(0, vanir.tools.vanir_create.main([
-            '--qubesxml', vanir.tests.XMLPATH,
+            '--vanirxml', vanir.tests.XMLPATH,
             '--property', 'default_kernel=testkernel']))
 
         self.assertEqual('testkernel',
