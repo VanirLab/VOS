@@ -47,7 +47,7 @@ POOL_CONF = {'name': 'test-lvm',
              'thin_pool': DEFAULT_LVM_POOL.split('/')[1]}
 
 
-class ThinPoolBase(vanir.tests.QubesTestCase):
+class ThinPoolBase(vanir.tests.VanirTestCase):
     ''' Sanity tests for :py:class:`vanir.storage.lvm.ThinPool` '''
 
     created_pool = False
