@@ -111,7 +111,7 @@ class TestVM(object):
             return self.name == other.name
 
 
-class TC_00_Block(vanir.tests.QubesTestCase):
+class TC_00_Block(vanir.tests.VanirTestCase):
 
     def setUp(self):
         super().setUp()
