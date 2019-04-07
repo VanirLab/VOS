@@ -365,7 +365,7 @@ class TC_00_BackupCompatibility(
         output.close()
 
     def assertRestored(self, name, **kwargs):
-        with self.assertNotRaises((KeyError, vanir.exc.QubesException)):
+        with self.assertNotRaises((KeyError, vanir.exc.VanirException)):
             vm = self.app.domains[name]
             asyncio.get_event_loop().run_until_complete(vm.storage.verify())
             for prop, value in kwargs.items():
