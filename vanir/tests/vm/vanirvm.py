@@ -311,7 +311,7 @@ class VanirVMTestsMixin(object):
         self.assertPropertyInvalidValue(vm, prop_name, '')
 
 
-class TC_90_QubesVM(VanirVMTestsMixin, vanir.tests.VanirTestCase):
+class TC_90_VanirVM(VanirVMTestsMixin, vanir.tests.VanirTestCase):
     def test_000_init(self):
         self.get_vm()
 
@@ -1230,7 +1230,7 @@ class TC_90_QubesVM(VanirVMTestsMixin, vanir.tests.VanirTestCase):
             self.assertXMLEqual(lxml.etree.XML(libvirt_xml),
                 lxml.etree.XML(expected.format(
                     extra_ip='<ip address="{}::a89:1" family=\'ipv6\'/>'.format(
-                        vanir.config.qubes_ipv6_prefix.replace(':0000', '')))))
+                        vanir.config.vanir_ipv6_prefix.replace(':0000', '')))))
 
     @unittest.mock.patch('vanir.utils.get_timezone')
     @unittest.mock.patch('vanir.utils.urandom')
@@ -1363,7 +1363,7 @@ class TC_90_QubesVM(VanirVMTestsMixin, vanir.tests.VanirTestCase):
         with self.subTest('ipv6'):
             netvm.features['ipv6'] = True
             expected['/vanir-ip6'] = \
-                vanir.config.qubes_ipv6_prefix.replace(':0000', '') + \
+                vanir.config.vanir_ipv6_prefix.replace(':0000', '') + \
                 '::a89:3'
             expected['/vanir-gateway6'] = expected['/vanir-ip6'][:-1] + '2'
             vm.create_qdb_entries()
@@ -1374,7 +1374,7 @@ class TC_90_QubesVM(VanirVMTestsMixin, vanir.tests.VanirTestCase):
             del netvm.features['ipv6']
             vm.features['ipv6'] = True
             expected['/vanir-ip6'] = \
-                vanir.config.qubes_ipv6_prefix.replace(':0000', '') + \
+                vanir.config.vanir_ipv6_prefix.replace(':0000', '') + \
                 '::a89:3'
             del expected['/vanir-gateway6']
             vm.create_qdb_entries()
@@ -1415,7 +1415,7 @@ class TC_90_QubesVM(VanirVMTestsMixin, vanir.tests.VanirTestCase):
         test_vanirdb.data.clear()
         with self.subTest('proxy_ipv6'):
             netvm.features['ipv6'] = True
-            ip6 = vanir.config.qubes_ipv6_prefix.replace(
+            ip6 = vanir.config.vanir_ipv6_prefix.replace(
                 ':0000', '') + '::a89:3'
             expected['/vanir-netvm-gateway6'] = ip6[:-1] + '2'
             expected['/vanir-firewall/' + ip6] = ''
