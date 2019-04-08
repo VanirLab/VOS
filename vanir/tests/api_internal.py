@@ -143,4 +143,4 @@ class TC_00_API_Misc(vanir.tests.VanirTestCase):
             no_qrexec_vm.mock_calls)
         self.assertIn(('resume', (), {}),
             no_qrexec_vm.mock_calls)
-© 2019 GitHub, Inc.
+#2019 Vanir-lab.
