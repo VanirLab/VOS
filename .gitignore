@@ -1,0 +1,20 @@
+*.pyc
+*.swp
+*.swo
+.DS_Store
+local_settings.py
+archweb.db
+archweb.db-*
+newrelic.key
+tags
+collected_static/
+testing/
+env/
+
+.mypy_cache/
+
+# rope
+.ropeproject/
+
+# coverage
+.coverage
