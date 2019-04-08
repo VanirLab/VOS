@@ -10,7 +10,7 @@ from django.db.models import Q
 from django.utils.feedgenerator import Rss201rev2Feed
 from django.views.decorators.http import condition
 
-from main.models import Arch, Repo, Package
+from main.models import Vanir, Repo, Package
 from news.models import News
 from packages.models import Update
 from releng.models import Release
@@ -64,17 +64,17 @@ class PackageFeed(Feed):
 
     __name__ = 'package_feed'
 
-    def get_object(self, request, arch='', repo=''):
+    def get_object(self, request, vanir='', repo=''):
         obj = dict()
         qs = Package.objects.normal().order_by('-last_update')
 
-        if arch != '':
-            # feed for a single arch, also include 'any' packages everywhere
-            a = Arch.objects.get(name=arch)
-            qs = qs.filter(Q(arch=a) | Q(arch__agnostic=True))
-            obj['arch'] = a
+        if vanir != '':
+            # feed for a single vanir, also include 'any' packages everywhere
+            a = Vanir.objects.get(name=vanir)
+            qs = qs.filter(Q(vanir=a) | Q(arch__agnostic=True))
+            obj['vanir'] = a
         if repo != '':
-            # feed for a single arch AND repo
+            # feed for a single vanir AND repo
             r = Repo.objects.get(name__iexact=repo)
             qs = qs.filter(repo=r)
             obj['repo'] = r
@@ -84,20 +84,20 @@ class PackageFeed(Feed):
         return obj
 
     def title(self, obj):
-        s = 'Arch Linux: Recent package updates'
-        if 'repo' in obj and 'arch' in obj:
-            s += ' (%s [%s])' % (obj['arch'].name, obj['repo'].name.lower())
+        s = 'Vanir Linux: Recent package updates'
+        if 'repo' in obj and 'vanir' in obj:
+            s += ' (%s [%s])' % (obj['vanir'].name, obj['repo'].name.lower())
         elif 'repo' in obj:
             s += ' [%s]' % (obj['repo'].name.lower())
-        elif 'arch' in obj:
-            s += ' (%s)' % (obj['arch'].name)
+        elif 'vanir' in obj:
+            s += ' (%s)' % (obj['vanir'].name)
         return s
 
     def description(self, obj):
-        s = 'Recently updated packages in the Arch Linux package repositories'
-        if 'arch' in obj:
-            s += ' for the \'%s\' architecture' % obj['arch'].name.lower()
-            if not obj['arch'].agnostic:
+        s = 'Recently updated packages in the Vanir Linux package repositories'
+        if 'vanir' in obj:
+            s += ' for the \'%s\' architecture' % obj['vanir'].name.lower()
+            if not obj['vanir'].agnostic:
                 s += ' (including \'any\' packages)'
         if 'repo' in obj:
             s += ' in the [%s] repository' % obj['repo'].name.lower()
@@ -122,13 +122,13 @@ class PackageFeed(Feed):
         return item.last_update
 
     def item_title(self, item):
-        return '%s %s %s' % (item.pkgname, item.full_version, item.arch.name)
+        return '%s %s %s' % (item.pkgname, item.full_version, item.vanir.name)
 
     def item_description(self, item):
         return item.pkgdesc
 
     def item_categories(self, item):
-        return (item.repo.name, item.arch.name)
+        return (item.repo.name, item.vanir.name)
 
 def removal_last_modified(request, *args, **kwargs):
     try:
@@ -147,7 +147,7 @@ class PackageUpdatesFeed(Feed):
 
     __name__ = 'packages_updates_feed'
 
-    def get_object(self, request, operation='', arch='', repo=''):
+    def get_object(self, request, operation='', vanir='', repo=''):
         obj = dict()
 
         if 'added' in request.path:
@@ -159,13 +159,13 @@ class PackageUpdatesFeed(Feed):
 
         qs = Update.objects.filter(action_flag=flag).order_by('-created')
 
-        if arch != '':
-            # feed for a single arch, also include 'any' packages everywhere
-            a = Arch.objects.get(name=arch)
-            qs = qs.filter(Q(arch=a) | Q(arch__agnostic=True))
-            obj['arch'] = a
+        if vanir != '':
+            # feed for a single vanir, also include 'any' packages everywhere
+            a = Vanir.objects.get(name=vanir)
+            qs = qs.filter(Q(vanir=a) | Q(arch__agnostic=True))
+            obj['vanir'] = a
         if repo != '':
-            # feed for a single arch AND repo
+            # feed for a single vanir AND repo
             r = Repo.objects.get(name__iexact=repo)
             qs = qs.filter(repo=r)
             obj['repo'] = r
@@ -176,20 +176,20 @@ class PackageUpdatesFeed(Feed):
         return obj
 
     def title(self, obj):
-        s = 'Arch Linux: Recent {} packages'.format(obj['action'])
-        if 'repo' in obj and 'arch' in obj:
-            s += ' (%s [%s])' % (obj['arch'].name, obj['repo'].name.lower())
+        s = 'Vanir Linux: Recent {} packages'.format(obj['action'])
+        if 'repo' in obj and 'vanir' in obj:
+            s += ' (%s [%s])' % (obj['vanir'].name, obj['repo'].name.lower())
         elif 'repo' in obj:
             s += ' [%s]' % (obj['repo'].name.lower())
-        elif 'arch' in obj:
-            s += ' (%s)' % (obj['arch'].name)
+        elif 'vanir' in obj:
+            s += ' (%s)' % (obj['vanir'].name)
         return s
 
     def description(self, obj):
-        s = 'Recently {} packages in the Arch Linux package repositories'.format(obj['action'])
-        if 'arch' in obj:
-            s += ' for the \'%s\' architecture' % obj['arch'].name.lower()
-            if not obj['arch'].agnostic:
+        s = 'Recently {} packages in the Vanir Linux package repositories'.format(obj['action'])
+        if 'vanir' in obj:
+            s += ' for the \'%s\' architecture' % obj['vanir'].name.lower()
+            if not obj['vanir'].agnostic:
                 s += ' (including \'any\' packages)'
         if 'repo' in obj:
             s += ' in the [%s] repository' % obj['repo'].name.lower()
@@ -214,13 +214,13 @@ class PackageUpdatesFeed(Feed):
         return item.created
 
     def item_title(self, item):
-        return '%s %s' % (item.pkgname, item.arch.name)
+        return '%s %s' % (item.pkgname, item.vanir.name)
 
     def item_description(self, item):
         return item.pkgname
 
     def item_categories(self, item):
-        return (item.repo.name, item.arch.name)
+        return (item.repo.name, item.vanir.name)
 
 
 def news_last_modified(request, *args, **kwargs):
@@ -232,9 +232,9 @@ def news_last_modified(request, *args, **kwargs):
 class NewsFeed(Feed):
     feed_type = FasterRssFeed
 
-    title = 'Arch Linux: Recent news updates'
+    title = 'Vanir Linux: Recent news updates'
     link = '/news/'
-    description = 'The latest and greatest news from the Arch Linux distribution.'
+    description = 'The latest and greatest news from the Vanir Linux distribution.'
     subtitle = description
 
     def __call__(self, request, *args, **kwargs):
@@ -271,7 +271,7 @@ class NewsFeed(Feed):
 class ReleaseFeed(Feed):
     feed_type = FasterRssFeed
 
-    title = 'Arch Linux: Releases'
+    title = 'Vanir Linux: Releases'
     link = '/download/'
     description = 'Release ISOs'
     subtitle = description
@@ -313,5 +313,3 @@ class ReleaseFeed(Feed):
         return ""
 
     item_enclosure_mime_type = 'application/x-bittorrent'
-
-
