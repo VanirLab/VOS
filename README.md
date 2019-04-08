@@ -1,4 +1,5 @@
 [![Build Status](https://travis-ci.org/VanirLab/VOS.svg?branch=master)
+[![Coverage Status](https://coveralls.io/repos/github/VanirLab/VOS/badge.svg?branch=master)](https://coveralls.io/github/VanirLab/VOS?branch=master)
 
 # VOS
 ## Vanir Operative System
