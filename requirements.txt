@@ -23,5 +23,5 @@ pgpdump==1.5
 pytz>=2017.3
 parse==1.11.1
 django-jinja==2.4.1
-sqlparse==0.2.4
+sqlparse==0.4.2
 django-csp==3.5
