@@ -25,3 +25,4 @@ parse==1.11.1
 django-jinja==2.4.1
 sqlparse==0.2.4
 django-csp==3.5
+urllib3>=2.6.3 # not directly required, pinned by Snyk to avoid a vulnerability
